@@ -9,10 +9,6 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
 const LOSSLESS = new Set(['FLAC', 'WAV', 'ALAC', 'APE', 'WV']);
-const isTouch = api.platform === 'android';
-// Must match the phone-layout media query at the end of styles.css.
-const PHONE_MQ = '(max-width: 760px), (pointer: coarse) and (max-height: 520px)';
-const isPhone = () => matchMedia(PHONE_MQ).matches;
 
 // ------------------------------------------------------------------ icons (Lucide)
 const ic = (n) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
@@ -31,7 +27,7 @@ const PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#232428"/><g transform="translate(20 20)" fill="none" stroke="#55565c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS.music}</g></svg>`);
 
 // Album art. The CDN only has 60px / 117px thumbnails or the ~1000px original, so the native
-// side (gscover:// in Electron, /_gscover/ on Android) serves the original resized to the
+// process (gscover://, see main.js) serves the original resized to the
 // requested size and caches it. px: ~256 for small rows, 512 for cards, 800 for page headers;
 // 1000+ means the untouched original.
 const fullCover = (src) => (src || '').replace(/\/thumbs(_small)?\//, '/');
@@ -164,9 +160,6 @@ async function render(restore = false) {
   $('#navBack').disabled = nav.idx <= 0;
   $('#navFwd').disabled = nav.idx >= nav.stack.length - 1;
   $$('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.nav === route.name));
-  // Bottom tabs (phone layout): album pages keep whichever tab led to them.
-  const TAB_FOR = { home: 'home', collection: 'home', search: 'search', browse: 'search', list: 'search', charts: 'charts', library: 'library', liked: 'library', downloads: 'library', settings: 'library' };
-  if (TAB_FOR[route.name]) $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === TAB_FOR[route.name]));
   if (route.name !== 'search' && document.activeElement !== $('#searchInput')) $('#searchInput').value = '';
   viewTracks = []; viewContext = null;
   try {
@@ -428,7 +421,7 @@ const VIEWS = {
         <button class="icon-btn" data-act="album-shuffle" title="Shuffle play">${ic('shuffle')}</button>
         <button class="icon-btn ${saved ? 'on-save' : ''}" data-act="album-save" title="${saved ? 'Remove from Your Library' : 'Save to Your Library'}">${ic(saved ? 'checkCircle' : 'plusCircle')}</button>
         <button class="icon-btn" data-act="album-more" title="More options">${ic('more')}</button>
-        <button class="pill-btn" data-act="album-dl-menu" title="Download album">${icSpan('download')}<span class="pill-label">Download album</span>${icSpan('chevronDown')}</button>
+        <button class="pill-btn" data-act="album-dl-menu">${icSpan('download')}Download album${icSpan('chevronDown')}</button>
       </div>
       ${trackTable(a.tracks, { formats: a.formats, discs: a.multiDisc })}
       <div class="page" style="padding-top:16px">
@@ -449,7 +442,7 @@ const VIEWS = {
     }
     const formats = [...new Set(state.liked.flatMap((t) => Object.keys(t.sizes || {})))];
     setView(`${head}<div class="action-bar"><button class="play-btn" data-act="album-play" title="Play">${ic('play')}</button><button class="icon-btn" data-act="album-shuffle" title="Shuffle play">${ic('shuffle')}</button>
-      <button class="pill-btn" data-act="liked-dl-menu" title="Download all">${icSpan('download')}<span class="pill-label">Download all</span>${icSpan('chevronDown')}</button></div>
+      <button class="pill-btn" data-act="liked-dl-menu">${icSpan('download')}Download all${icSpan('chevronDown')}</button></div>
       ${trackTable(state.liked, { formats, showAlbum: true })}`);
   },
 
@@ -462,14 +455,14 @@ const VIEWS = {
       <div class="setting"><div><div class="s-title">Streaming quality</div><div class="s-desc">Lossless uses FLAC when an album offers it, and falls back to MP3.</div></div>
         <div class="seg"><button class="${p.stream === 'MP3' ? 'on' : ''}" data-act="pref" data-k="stream" data-v="MP3">Normal · MP3</button><button class="${p.stream === 'FLAC' ? 'on' : ''}" data-act="pref" data-k="stream" data-v="FLAC">Lossless · FLAC</button></div></div>
       <div class="setting"><div style="min-width:0"><div class="s-title">Download location</div><div class="s-desc" style="word-break:break-all">${esc(s.downloadDir)}</div></div>
-        <div style="display:flex;gap:8px;flex:none"><button class="pill-btn" data-act="dl-open-folder">${icSpan('folder')}Open</button><button class="pill-btn primary desktop-only" data-act="choose-dir">Change</button></div></div>
+        <div style="display:flex;gap:8px;flex:none"><button class="pill-btn" data-act="dl-open-folder">${icSpan('folder')}Open</button><button class="pill-btn primary" data-act="choose-dir">Change</button></div></div>
       <div class="setting"><div><div class="s-title">Simultaneous downloads</div><div class="s-desc">How many files download at the same time.</div></div>
         <select class="select" id="concSel">${[1, 2, 3, 4, 5, 6].map((n) => `<option ${s.concurrency === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
       <div class="setting"><div><div class="s-title">Listening history</div><div class="s-desc">${plural(state.recent.length, 'recently played album')}.</div></div><button class="pill-btn" data-act="clear-recent">Clear</button></div>
       <div class="setting"><div><div class="s-title">Saved lyric choices</div><div class="s-desc">Lyrics you picked by hand for ${plural(Object.keys(LYR.choices).length, 'song')}.</div></div><button class="pill-btn" data-act="clear-lyrics">Clear</button></div>
       <div class="setting"><div><div class="s-title">About</div><div class="s-desc">GameSong is an unofficial player for the KHInsider video game music archive. Music is streamed from downloads.khinsider.com; lyrics come from LRCLIB. Icons by Lucide, typeface Inter.</div></div>
         <button class="pill-btn" data-act="open-site" data-url="${SITE}/">${icSpan('external')}KHInsider</button></div>
-      <div class="setting desktop-only"><div class="s-desc"><b style="color:var(--text);font-weight:500">Shortcuts</b> · Space play/pause · Ctrl+←/→ previous/next · Ctrl+↑/↓ volume · Ctrl+K search · Ctrl+B sidebar · N Now Playing · L lyrics · F11 full screen · Alt+← back</div></div>
+      <div class="setting"><div class="s-desc"><b style="color:var(--text);font-weight:500">Shortcuts</b> · Space play/pause · Ctrl+←/→ previous/next · Ctrl+↑/↓ volume · Ctrl+K search · Ctrl+B sidebar · N Now Playing · L lyrics · F11 full screen · Alt+← back</div></div>
     </div>`);
     $('#concSel').addEventListener('change', async (e) => { state.settings = await api.setSettings({ concurrency: +e.target.value }); toast('Saved'); });
   },
@@ -642,7 +635,6 @@ function setLoading(on) { P.loading = on; $$('.js-play').forEach((b) => b.classL
 
 function updateNowPlaying() {
   const t = P.current;
-  document.body.classList.toggle('no-track', !t);
   $('#npArt').src = t?.cover ? art(t.cover, 256) : '';
   $('#npTitle').textContent = t?.name || '';
   $('#npSub').textContent = t?.albumTitle || '';
@@ -655,7 +647,6 @@ function updateNowPlaying() {
     navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.albumTitle, album: t.albumTitle, artwork: t.cover ? [{ src: fullCover(t.cover), sizes: '1000x1000' }] : [] });
   }
   markPlaying(); renderQueue(); renderLibrary(); renderNP();
-  pushMedia();
 }
 
 function markPlaying() {
@@ -676,31 +667,7 @@ function onPlayState() {
   $$('.js-play').forEach((b) => { setIcon(b, audio.paused ? 'play' : 'pause'); b.title = audio.paused ? 'Play' : 'Pause'; });
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
   markPlaying();
-  pushMedia();
 }
-
-// Android: keep the playback notification / lock-screen controls in sync.
-function pushMedia() {
-  if (!api.mediaUpdate || !P.current) return;
-  const t = P.current;
-  api.mediaUpdate({
-    title: t.name,
-    album: t.albumTitle,
-    art: fullCover(t.cover), // the native side decodes it at notification size
-    playing: !audio.paused,
-    position: audio.currentTime || 0,
-    duration: audio.duration || t.durSec || 0,
-  });
-}
-api.onMediaAction?.((action, d) => {
-  if (action === 'play') { if (audio.paused) togglePlay(); }
-  else if (action === 'pause') audio.pause();
-  else if (action === 'next') next();
-  else if (action === 'prev') prev();
-  else if (action === 'seek' && audio.duration) audio.currentTime = d.position;
-});
-audio.addEventListener('seeked', pushMedia);
-audio.addEventListener('durationchange', pushMedia);
 audio.addEventListener('play', onPlayState);
 audio.addEventListener('pause', onPlayState);
 audio.addEventListener('ended', () => next(true));
@@ -1084,7 +1051,7 @@ function downloadsHtml() {
   const other = all.filter((d) => d.state === 'error' || d.state === 'cancelled');
   const list = (title, arr) => arr.length ? `<section class="section">${sectionHead(title)}${arr.map(dlRow).join('')}</section>` : '';
   return `<div class="page"><h1 class="page-title">Downloads</h1><div class="dl-toolbar"><div class="dl-path">${icSpan('folder')}<code>${esc(state.settings.downloadDir)}</code></div>
-    <button class="pill-btn desktop-only" data-act="choose-dir">Change folder</button><button class="pill-btn" data-act="dl-open-folder">Open folder</button>
+    <button class="pill-btn" data-act="choose-dir">Change folder</button><button class="pill-btn" data-act="dl-open-folder">Open folder</button>
     ${done.length || other.length ? '<button class="pill-btn" data-act="dl-clear">Clear finished</button>' : ''}</div>
     <p class="muted" style="margin:12px 0 0">${plural(done.length, 'file')} saved · ${fmtBytes(done.reduce((s, d) => s + (d.total || 0), 0)) || '0 MB'}</p>
     <div id="dlLists">${list(`In progress · ${active.length}`, active)}${list('Failed or cancelled', other)}${list('Completed', done.slice(0, 200))}
@@ -1175,13 +1142,7 @@ async function randomAlbum() {
 // ------------------------------------------------------------------ events
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-act], [data-nav], [data-action]');
-  if (!el) {
-    // Touch: a single tap on a song plays it (desktop uses double-click).
-    const tapped = isTouch && e.target.closest('.track');
-    if (tapped) { playList(viewTracks, +tapped.dataset.idx, viewContext); return; }
-    $$('.track.selected').forEach((r) => r.classList.remove('selected'));
-    return;
-  }
+  if (!el) { $$('.track.selected').forEach((r) => r.classList.remove('selected')); return; }
   const act = el.dataset.act || (el.dataset.nav ? 'nav' : el.dataset.action);
   const rowEl = el.closest('.track');
   const t = rowEl ? viewTracks[+rowEl.dataset.idx] : null;
@@ -1270,7 +1231,7 @@ document.addEventListener('submit', (e) => {
 // Track rows: select, double-click to play, right-click menus.
 view.addEventListener('mousedown', (e) => {
   const r = e.target.closest('.track');
-  if (!r || e.button !== 0 || isTouch) return; // touch: tap plays, no selection state
+  if (!r || e.button !== 0) return;
   $$('.track.selected').forEach((x) => x !== r && x.classList.remove('selected'));
   r.classList.add('selected');
 });
@@ -1332,11 +1293,10 @@ $$('.js-mute').forEach((b) => b.addEventListener('click', () => { state.prefs.mu
 $('#btnQueue').addEventListener('click', () => { state.prefs.queueOpen = !state.prefs.queueOpen; savePrefs(); renderQueue(); });
 $('#btnLyrics').addEventListener('click', () => { if (npOpen() && state.prefs.npLyrics) closeNP(); else openNP({ lyrics: true }); });
 $('#btnNowPlaying').addEventListener('click', () => (npOpen() ? closeNP() : openNP()));
-// Mini player: on phones the whole strip opens Now Playing; on desktop the art does, and the
-// title / album link to the album.
+// Mini player: the art opens Now Playing; the title / album link to the album.
 $('.np-mini').addEventListener('click', (e) => {
   if (!P.current || e.target.closest('.js-like')) return;
-  if (isPhone() || e.target.closest('#miniArt')) openNP();
+  if (e.target.closest('#miniArt')) openNP();
   else if (e.target.closest('#npTitle, #npSub')) go({ name: 'album', path: P.current.albumPath });
 });
 $('#npBigAlbum').addEventListener('click', () => P.current && go({ name: 'album', path: P.current.albumPath }));
@@ -1367,26 +1327,13 @@ searchInput.addEventListener('input', () => runSearch(false));
 searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') runSearch(true); if (e.key === 'Escape') searchInput.blur(); });
 searchInput.addEventListener('focus', () => { if (nav.stack[nav.idx]?.name !== 'search') go({ name: 'search', q: searchInput.value }); });
 
-// Android back button (called by MainActivity): close the top-most layer, else go back a page.
-// Returning false lets Android send the app to the background.
-window.__gsBack = () => {
-  if (menuEl) { closeMenu(); return true; }
-  if (!$('#lightbox').hidden) { closeLightbox(); return true; }
-  if (npOpen()) { closeNP(); return true; }
-  if (state.prefs.queueOpen) { state.prefs.queueOpen = false; savePrefs(); renderQueue(); return true; }
-  if (document.activeElement === searchInput) searchInput.blur();
-  if (nav.idx > 0) { back(); return true; }
-  if (nav.stack[nav.idx]?.name !== 'home') { go({ name: 'home' }); return true; }
-  return false;
-};
-
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName);
   const mod = e.ctrlKey || e.metaKey; // Ctrl on Windows, Cmd on macOS
   if ((mod && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) { e.preventDefault(); closeNP(); searchInput.focus(); searchInput.select(); return; }
   if (e.key === 'F11') { e.preventDefault(); api.setFullscreen(); return; }
-  if (mod && e.key.toLowerCase() === 'b' && !isPhone()) { e.preventDefault(); toggleSidebar(); return; }
+  if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleSidebar(); return; }
   if (e.key === 'Escape') {
     if (menuEl) return closeMenu();
     if (!$('#lightbox').hidden) { closeLightbox(); return; }
@@ -1410,10 +1357,6 @@ view.addEventListener('scroll', closeMenu, { passive: true });
 // ------------------------------------------------------------------ boot
 (async function boot() {
   document.body.classList.add('platform-' + api.platform);
-  if (isTouch) {
-    document.body.classList.add('touch');
-    state.prefs.queueOpen = false; // the queue is a full-screen sheet on phones; don't open it at launch
-  }
   if (api.platform === 'darwin') $('.search-box kbd').textContent = '⌘ K';
   hydrateIcons();
   state.settings = await api.getSettings();

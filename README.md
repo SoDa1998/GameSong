@@ -37,42 +37,6 @@ This builds two files in `dist/`:
 
 Neither file is code-signed, so Windows SmartScreen may warn you the first time. Choose **More info → Run anyway**.
 
-## Android app (sideload)
-
-`dist/GameSong-<version>-android.apk` runs on Android 12 and newer. To install it:
-
-1. Copy the APK to your phone.
-2. Open it, and allow **Install unknown apps** for the app you opened it with when Android asks.
-3. Tap **Install**.
-
-**First launch:** GameSong passes KHInsider's Cloudflare check once, which can take up to ~30 seconds; a banner explains this. If Cloudflare asks for a "Verify you are human" tap, GameSong shows the check on screen. After that, launches are fast.
-
-**How it works on a phone:**
-- It uses the same UI as the desktop app, with a phone layout: bottom tabs, a mini player, and a full-screen Now Playing with lyrics.
-- Tap a song to play it, and long-press it for more options. The Back button closes screens and goes back.
-- Music keeps playing in the background and with the screen off. Controls appear in the notification and on the lock screen.
-- Downloads go to **Music/GameSong/<Album>/** through Android's download manager, so they show up in other music apps.
-
-### Building the APK
-
-This needs [Node.js](https://nodejs.org/) 20+, JDK 21, and the Android SDK (platform 36, build-tools 35/36). Point `android/local.properties` at the SDK (`sdk.dir=...`), then run:
-
-```bash
-npm run apk
-```
-
-The signed APK is written to `android/app/build/outputs/apk/release/`.
-
-**Signing:** release builds are signed with the key in `android/keystore/`; `android/keystore.properties` holds its passwords. Both are git-ignored and must never be shared. **Back them up privately:** updating the installed app requires the same key, and without it you'd have to uninstall first, which loses your likes and history.
-
-**Code layout:**
-- `mobile/src/android-bridge.js` implements the app's `window.khi` API on Android.
-- `android/app/src/main/java/com/gamesong/app/` holds the native parts:
-  - a page proxy that passes Cloudflare,
-  - downloads,
-  - the playback notification and media session,
-  - Back-button handling.
-
 ## Features
 
 - **Home**: a featured carousel, recently played albums, fresh additions, the Top 40 and popular series.

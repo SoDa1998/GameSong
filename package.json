@@ -8,15 +8,10 @@
   "scripts": {
     "start": "electron .",
     "assets": "node tools/build-assets.mjs",
-    "dist": "node tools/build-assets.mjs && electron-builder --win nsis portable --x64",
-    "mobile:sync": "node tools/build-assets.mjs && node tools/build-mobile.mjs && cap sync android",
-    "apk": "npm run mobile:sync && cd android && gradlew.bat assembleRelease"
+    "dist": "node tools/build-assets.mjs && electron-builder --win nsis portable --x64"
   },
   "license": "MIT",
   "devDependencies": {
-    "@capacitor/android": "^8.5.3",
-    "@capacitor/cli": "^8.5.3",
-    "@capacitor/core": "^8.5.3",
     "@fontsource-variable/inter": "^5.3.0",
     "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
@@ -39,10 +34,7 @@
       "package.json"
     ],
     "win": {
-      "target": [
-        "nsis",
-        "portable"
-      ],
+      "target": ["nsis", "portable"],
       "icon": "build/icon.png"
     },
     "nsis": {
