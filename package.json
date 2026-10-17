@@ -1,0 +1,56 @@
+{
+  "name": "gamesong",
+  "productName": "GameSong",
+  "version": "1.3.0",
+  "description": "A simple, modern streaming and download client for the KHInsider video game music archive.",
+  "author": "GameSong",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "assets": "node tools/build-assets.mjs",
+    "dist": "node tools/build-assets.mjs && electron-builder --win nsis portable --x64"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "lucide-static": "^1.59.0",
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
+  },
+  "build": {
+    "appId": "com.gamesong.app",
+    "productName": "GameSong",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "artifactName": "GameSong-Setup-${version}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GameSong",
+      "uninstallDisplayName": "GameSong",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "GameSong-Portable-${version}.${ext}"
+    }
+  }
+}

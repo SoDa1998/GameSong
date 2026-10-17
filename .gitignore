@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output (installers, portable exe, unpacked app)
+dist/
+dist-*/
+
+# Portable-mode data created next to the exe
+GameSong Data/
+GameSong Downloads/
+
+# Logs and OS/editor clutter
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

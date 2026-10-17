@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' https: data:; media-src https: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'" />
+  <title>GameSong</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark" data-icon="logo"></span>
+        <span class="brand-name">GameSong</span>
+      </div>
+      <nav class="nav">
+        <a class="nav-item" data-nav="home"><span class="ico" data-icon="home"></span><span>Home</span></a>
+        <a class="nav-item" data-nav="search"><span class="ico" data-icon="search"></span><span>Search</span></a>
+        <a class="nav-item" data-nav="browse"><span class="ico" data-icon="browse"></span><span>Browse</span></a>
+        <a class="nav-item" data-nav="charts"><span class="ico" data-icon="chart"></span><span>Charts</span></a>
+        <a class="nav-item" data-nav="library"><span class="ico" data-icon="library"></span><span>Your Library</span></a>
+      </nav>
+      <div class="side-divider"></div>
+      <div class="side-label">Playlists</div>
+      <div class="side-list" id="libraryList"></div>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <div class="nav-arrows">
+          <button class="icon-btn" id="navBack" title="Go back" data-icon="chevronLeft"></button>
+          <button class="icon-btn" id="navFwd" title="Go forward" data-icon="chevronRight"></button>
+        </div>
+        <label class="search-box">
+          <span class="ico" data-icon="search"></span>
+          <input id="searchInput" type="search" placeholder="Search albums, games, series…" autocomplete="off" spellcheck="false" />
+          <kbd>Ctrl K</kbd>
+        </label>
+        <div class="topbar-actions">
+          <button class="icon-btn" data-action="random" title="Random album" data-icon="dice"></button>
+          <button class="icon-btn" data-nav="downloads" title="Downloads" data-icon="downloadCircle"></button>
+          <button class="icon-btn avatar" data-nav="settings" title="Settings" data-icon="user"></button>
+        </div>
+      </header>
+      <div class="view" id="view"></div>
+    </main>
+
+    <!-- Queue drawer -->
+    <aside class="queue-panel" id="queuePanel" hidden></aside>
+
+    <!-- Player bar -->
+    <footer class="player" id="player">
+      <div class="np-mini">
+        <button class="mini-art" id="miniArt" title="Open Now Playing"><img id="npArt" alt="" /><span class="mini-expand" data-icon="maximize"></span></button>
+        <div class="mini-text">
+          <a class="mini-title" id="npTitle"></a>
+          <a class="mini-sub" id="npSub"></a>
+        </div>
+        <button class="icon-btn js-like" title="Save to Liked Songs" data-icon="heart"></button>
+      </div>
+      <div class="controls">
+        <div class="buttons">
+          <button class="icon-btn js-shuffle" title="Shuffle" data-icon="shuffle"></button>
+          <button class="icon-btn lg js-prev" title="Previous" data-icon="prev"></button>
+          <button class="play-btn js-play" title="Play" data-icon="play"></button>
+          <button class="icon-btn lg js-next" title="Next" data-icon="next"></button>
+          <button class="icon-btn js-repeat" title="Repeat" data-icon="repeat"></button>
+        </div>
+        <div class="progress-row">
+          <span class="time js-cur">0:00</span>
+          <div class="slider js-seek"><div class="slider-track"><div class="slider-buffer"></div><div class="slider-fill"></div></div><div class="slider-thumb"></div></div>
+          <span class="time js-dur">0:00</span>
+        </div>
+      </div>
+      <div class="extras">
+        <span class="quality-badge js-quality" title="Streaming format"></span>
+        <button class="icon-btn" id="btnLyrics" title="Lyrics" data-icon="lyrics"></button>
+        <button class="icon-btn" id="btnQueue" title="Queue" data-icon="queue"></button>
+        <button class="icon-btn js-mute" title="Mute" data-icon="volume"></button>
+        <div class="slider volume js-vol"><div class="slider-track"><div class="slider-fill"></div></div><div class="slider-thumb"></div></div>
+        <button class="icon-btn" id="btnNowPlaying" title="Now Playing" data-icon="maximize"></button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Now Playing screen -->
+  <section class="np" id="np" hidden aria-label="Now Playing">
+    <div class="np-bg"><img id="npBg" alt="" /></div>
+    <header class="np-top">
+      <div class="np-top-left">
+        <button class="icon-btn" data-act="np-close" title="Close" data-icon="chevronDown"></button>
+      </div>
+      <div class="np-context">
+        <span class="np-eyebrow">Playing from album</span>
+        <a class="np-ctx-title" id="npCtx"></a>
+      </div>
+      <div class="np-top-actions">
+        <button class="icon-btn" id="npFsBtn" data-act="np-fullscreen" title="Full screen" data-icon="maximize"></button>
+      </div>
+    </header>
+    <div class="np-body">
+      <div class="np-stage" id="npStage">
+        <img class="np-art" id="npBigArt" alt="" />
+        <div class="np-lyrics" id="npLyrics"></div>
+      </div>
+      <div class="np-side">
+        <div class="np-meta">
+          <h1 class="np-title" id="npBigTitle"></h1>
+          <a class="np-album" id="npBigAlbum"></a>
+        </div>
+        <div class="np-actions">
+          <button class="icon-btn js-like" title="Save to Liked Songs" data-icon="heart"></button>
+          <button class="icon-btn" data-act="np-download" title="Download" data-icon="download"></button>
+          <button class="icon-btn" data-act="np-more" title="More options" data-icon="more"></button>
+          <span class="quality-badge js-quality"></span>
+        </div>
+        <div class="np-progress">
+          <div class="slider js-seek"><div class="slider-track"><div class="slider-buffer"></div><div class="slider-fill"></div></div><div class="slider-thumb"></div></div>
+          <div class="np-times"><span class="js-cur">0:00</span><span class="js-dur">0:00</span></div>
+        </div>
+        <div class="np-controls">
+          <button class="icon-btn js-shuffle" title="Shuffle" data-icon="shuffle"></button>
+          <button class="icon-btn xl js-prev" title="Previous" data-icon="prev"></button>
+          <button class="play-btn xl js-play" title="Play" data-icon="play"></button>
+          <button class="icon-btn xl js-next" title="Next" data-icon="next"></button>
+          <button class="icon-btn js-repeat" title="Repeat" data-icon="repeat"></button>
+        </div>
+        <div class="np-utility">
+          <div class="np-volume">
+            <button class="icon-btn js-mute" title="Mute" data-icon="volume"></button>
+            <div class="slider volume js-vol"><div class="slider-track"><div class="slider-fill"></div></div><div class="slider-thumb"></div></div>
+          </div>
+          <button class="icon-btn" id="npLyricsToggle" data-act="np-lyrics" title="Show lyrics" data-icon="lyrics"></button>
+        </div>
+        <div class="np-next" id="npNext"></div>
+      </div>
+    </div>
+  </section>
+
+  <div id="menuLayer"></div>
+  <div id="toasts"></div>
+  <div id="lightbox" hidden><img alt="" /></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

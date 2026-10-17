@@ -1,0 +1,321 @@
+// GameSong — Electron main process.
+// All requests to khinsider go through Chromium's network stack (net.fetch), which
+// Cloudflare accepts where plain Node/curl clients get blocked. If a page still comes
+// back as a Cloudflare challenge we fall back to loading it in a hidden browser window.
+const { app, BrowserWindow, ipcMain, net, dialog, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+
+// Portable build: electron-builder's portable exe sets PORTABLE_EXECUTABLE_DIR to the folder the
+// exe lives in. Keep all app data (and downloads, by default) beside it instead of in AppData.
+const PORTABLE_DIR = process.env.PORTABLE_EXECUTABLE_DIR || '';
+if (PORTABLE_DIR) app.setPath('userData', path.join(PORTABLE_DIR, 'GameSong Data'));
+
+const BASE = 'https://downloads.khinsider.com';
+const ALLOWED_MEDIA_HOST = /(^|\.)vgmtreasurechest\.com$/i;
+
+let win;
+
+// ---------------------------------------------------------------- settings
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
+let settings = {};
+function loadSettings() {
+  try { settings = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')); } catch { settings = {}; }
+  settings.downloadDir ||= PORTABLE_DIR ? path.join(PORTABLE_DIR, 'GameSong Downloads') : path.join(app.getPath('music'), 'GameSong');
+  settings.concurrency ||= 3;
+}
+function saveSettings() {
+  try { fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2)); } catch {}
+}
+
+// ---------------------------------------------------------------- page fetching
+const pageCache = new Map(); // url -> { at, html }
+const PAGE_TTL = 10 * 60 * 1000;
+
+function toKhiUrl(p) {
+  const u = new URL(p, BASE);
+  if (u.hostname !== 'downloads.khinsider.com') throw new Error('Blocked host: ' + u.hostname);
+  u.protocol = 'https:';
+  return u.toString();
+}
+
+const isChallenge = (status, html) =>
+  status === 403 || status === 503 ||
+  /<title>(Just a moment|Attention Required)/i.test(html);
+
+let windowFetchChain = Promise.resolve();
+function fetchViaWindow(url) {
+  // Serialize: one hidden window at a time.
+  const job = windowFetchChain.then(() => new Promise((resolve, reject) => {
+    const w = new BrowserWindow({ show: false, webPreferences: { javascript: true, images: false } });
+    let done = false;
+    const finish = (fn, v) => { if (done) return; done = true; clearTimeout(timer); clearInterval(poll); if (!w.isDestroyed()) w.destroy(); fn(v); };
+    const timer = setTimeout(() => finish(reject, new Error('Timed out loading page')), 30000);
+    let poll;
+    w.webContents.on('did-finish-load', () => {
+      clearInterval(poll);
+      // Challenge pages redirect themselves; poll until real content shows up.
+      poll = setInterval(async () => {
+        try {
+          const html = await w.webContents.executeJavaScript('document.documentElement.outerHTML');
+          if (!isChallenge(200, html) && html.includes('pageContent')) finish(resolve, html);
+        } catch (e) { finish(reject, e); }
+      }, 400);
+    });
+    w.loadURL(url).catch(() => {});
+  }));
+  windowFetchChain = job.catch(() => {});
+  return job;
+}
+
+async function fetchHtml(p, { fresh = false } = {}) {
+  const url = toKhiUrl(p);
+  const hit = pageCache.get(url);
+  if (!fresh && hit && Date.now() - hit.at < PAGE_TTL) return { url: hit.finalUrl, html: hit.html };
+
+  let html, status, finalUrl = url;
+  try {
+    const res = await net.fetch(url, {
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+    status = res.status;
+    finalUrl = res.url || url; // e.g. /random-album redirects to a real album
+    html = await res.text();
+  } catch (e) {
+    status = 0; html = '';
+  }
+  if (isChallenge(status, html) || status === 0) html = await fetchViaWindow(url);
+  else if (status >= 400 && status !== 404) throw new Error(`HTTP ${status} for ${url}`);
+
+  if (!/^\/random-/.test(new URL(url).pathname)) {
+    pageCache.set(url, { at: Date.now(), html, finalUrl });
+    if (pageCache.size > 300) pageCache.delete(pageCache.keys().next().value);
+  }
+  return { url: finalUrl, html };
+}
+
+// ---------------------------------------------------------------- song resolution
+// A song page lists one direct CDN link per available format (MP3, FLAC, OGG, M4A...).
+const songCache = new Map();
+const decodeEntities = (s) => s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#039;/g, "'");
+
+async function resolveSong(songPath) {
+  if (songCache.has(songPath)) return songCache.get(songPath);
+  const { html } = await fetchHtml(songPath);
+  const re = /<a\s+href="([^"]+)"[^>]*>\s*<span class="songDownloadLink">[\s\S]*?download as\s+([A-Za-z0-9]+)[\s\S]*?<\/a>\s*(?:\(([^)]+)\))?/gi;
+  const links = [];
+  let m;
+  while ((m = re.exec(html))) {
+    links.push({ format: m[2].toUpperCase(), url: decodeEntities(m[1]), size: m[3] || '' });
+  }
+  if (!links.length) {
+    const a = html.match(/<audio[^>]+src="([^"]+)"/i);
+    if (a) {
+      const url = decodeEntities(a[1]);
+      links.push({ format: (url.split('.').pop() || 'MP3').toUpperCase(), url, size: '' });
+    }
+  }
+  if (!links.length) throw new Error('No download links found on song page');
+  const result = { links };
+  songCache.set(songPath, result);
+  return result;
+}
+
+// ---------------------------------------------------------------- downloads
+const sanitize = (s) => String(s || '').replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/[. ]+$/, '').trim().slice(0, 150) || 'Untitled';
+
+const dlQueue = [];
+const dlActive = new Map(); // id -> AbortController
+const dlCancelled = new Set();
+
+function sendDl(update) {
+  if (win && !win.isDestroyed()) win.webContents.send('dl:update', update);
+}
+
+function pump() {
+  while (dlActive.size < settings.concurrency && dlQueue.length) {
+    const item = dlQueue.shift();
+    if (dlCancelled.has(item.id)) continue;
+    runDownload(item);
+  }
+}
+
+async function runDownload(item) {
+  const ac = new AbortController();
+  dlActive.set(item.id, ac);
+  let tmp;
+  try {
+    sendDl({ id: item.id, state: 'resolving' });
+    let url = item.url;
+    let format = item.format;
+    if (!url) {
+      const { links } = await resolveSong(item.songPath);
+      const pick = links.find((l) => l.format === String(item.format).toUpperCase()) || links[0];
+      url = pick.url; format = pick.format;
+    }
+    const host = new URL(url).hostname;
+    if (!ALLOWED_MEDIA_HOST.test(host)) throw new Error('Unexpected media host ' + host);
+
+    const dir = path.join(settings.downloadDir, sanitize(item.folder));
+    await fs.promises.mkdir(dir, { recursive: true });
+    let name = item.filename || decodeURIComponent(new URL(url).pathname.split('/').pop());
+    const file = path.join(dir, sanitize(name));
+    tmp = file + '.part';
+
+    const res = await net.fetch(url, { signal: ac.signal });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const total = Number(res.headers.get('content-length')) || 0;
+    const ws = fs.createWriteStream(tmp);
+    const reader = res.body.getReader();
+    let received = 0, lastSent = 0;
+    sendDl({ id: item.id, state: 'downloading', received, total, format });
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      if (!ws.write(Buffer.from(value))) await new Promise((r) => ws.once('drain', r));
+      const now = Date.now();
+      if (now - lastSent > 200) { lastSent = now; sendDl({ id: item.id, state: 'downloading', received, total }); }
+    }
+    await new Promise((r, j) => ws.end((e) => (e ? j(e) : r())));
+    await fs.promises.rename(tmp, file);
+    sendDl({ id: item.id, state: 'done', received, total: total || received, file, format });
+  } catch (e) {
+    if (tmp) fs.promises.unlink(tmp).catch(() => {});
+    const cancelled = ac.signal.aborted || dlCancelled.has(item.id);
+    sendDl({ id: item.id, state: cancelled ? 'cancelled' : 'error', error: cancelled ? '' : String(e.message || e) });
+  } finally {
+    dlActive.delete(item.id);
+    pump();
+  }
+}
+
+// ---------------------------------------------------------------- IPC
+function registerIpc() {
+  ipcMain.handle('page:get', async (_e, p, opts) => fetchHtml(p, opts));
+  ipcMain.handle('song:resolve', async (_e, songPath) => resolveSong(songPath));
+
+  ipcMain.handle('dl:enqueue', (_e, items) => {
+    for (const it of items) { dlQueue.push(it); sendDl({ id: it.id, state: 'queued' }); }
+    pump();
+    return true;
+  });
+  ipcMain.handle('dl:cancel', (_e, id) => {
+    dlCancelled.add(id);
+    const i = dlQueue.findIndex((q) => q.id === id);
+    if (i >= 0) { dlQueue.splice(i, 1); sendDl({ id, state: 'cancelled' }); }
+    dlActive.get(id)?.abort();
+    return true;
+  });
+  ipcMain.handle('dl:reveal', (_e, file) => {
+    if (file && fs.existsSync(file)) shell.showItemInFolder(file);
+    else shell.openPath(settings.downloadDir);
+  });
+
+  ipcMain.handle('settings:get', () => settings);
+  ipcMain.handle('settings:chooseDir', async () => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.downloadDir });
+    if (!r.canceled && r.filePaths[0]) { settings.downloadDir = r.filePaths[0]; saveSettings(); }
+    return settings;
+  });
+  ipcMain.handle('settings:set', (_e, patch) => {
+    if (patch && typeof patch.concurrency === 'number') settings.concurrency = Math.min(6, Math.max(1, patch.concurrency | 0));
+    saveSettings();
+    return settings;
+  });
+  ipcMain.handle('open:external', (_e, url) => {
+    const u = new URL(url);
+    if (u.protocol === 'https:' && /khinsider\.com$/.test(u.hostname)) shell.openExternal(u.toString());
+  });
+
+  ipcMain.handle('lyrics:search', async (_e, params) => searchLyrics(params));
+
+  ipcMain.handle('win:fullscreen', (_e, on) => {
+    if (!win) return false;
+    win.setFullScreen(typeof on === 'boolean' ? on : !win.isFullScreen());
+    return win.isFullScreen();
+  });
+}
+
+// ---------------------------------------------------------------- lyrics
+// LRCLIB (https://lrclib.net) is a free, open lyrics database with time-synced lyrics.
+const LYRICS_UA = 'GameSong/1.0 (https://downloads.khinsider.com client)';
+async function searchLyrics(params = {}) {
+  const q = new URLSearchParams();
+  for (const k of ['q', 'track_name', 'artist_name', 'album_name']) {
+    const v = String(params[k] || '').trim().slice(0, 200);
+    if (v) q.set(k, v);
+  }
+  if (![...q.keys()].length) return [];
+  // LRCLIB occasionally answers 5xx under load; retry those (and network errors) with a short backoff.
+  let res, lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 600 * attempt));
+    try {
+      res = await net.fetch('https://lrclib.net/api/search?' + q, { headers: { 'User-Agent': LYRICS_UA, Accept: 'application/json' } });
+      if (res.ok || res.status < 500) break;
+      lastErr = new Error('Lyrics service returned HTTP ' + res.status);
+    } catch (e) { lastErr = e; res = null; }
+  }
+  if (!res || !res.ok) throw lastErr || new Error('Lyrics service returned HTTP ' + res?.status);
+  const list = await res.json();
+  return (Array.isArray(list) ? list : []).slice(0, 25).map((r) => ({
+    id: r.id,
+    track: r.trackName || '',
+    artist: r.artistName || '',
+    album: r.albumName || '',
+    duration: r.duration || 0,
+    instrumental: !!r.instrumental,
+    plain: r.plainLyrics || '',
+    synced: r.syncedLyrics || '',
+  }));
+}
+
+// ---------------------------------------------------------------- window
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1360,
+    height: 860,
+    minWidth: 960,
+    minHeight: 620,
+    backgroundColor: '#111214',
+    titleBarStyle: 'hidden',
+    // Windows/Linux draw min/max/close over the top-right; macOS keeps its traffic lights top-left.
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 20, y: 20 } }
+      : { titleBarOverlay: { color: '#111214', symbolColor: '#9a9ba1', height: 56 } }),
+    title: 'GameSong',
+    icon: path.join(__dirname, 'build', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  if (process.env.KHI_DEBUG) {
+    win.webContents.on('console-message', (e) => console.log('[renderer]', e.message));
+  }
+  win.webContents.on('will-navigate', (e) => e.preventDefault());
+  win.on('enter-full-screen', () => win.webContents.send('win:fs', true));
+  win.on('leave-full-screen', () => win.webContents.send('win:fs', false));
+}
+
+// Drop the "Electron/x" and app tokens so requests look like stock Chrome.
+app.userAgentFallback = app.userAgentFallback
+  .replace(/\s?Electron\/\S+/, '')
+  .replace(/\s?(khi-music|gamesong)\/\S+/i, '');
+
+app.whenReady().then(() => {
+  loadSettings();
+  registerIpc();
+  createWindow();
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+});
+
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
