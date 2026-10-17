@@ -7,7 +7,7 @@ GameSong is a desktop player for the [KHInsider](https://downloads.khinsider.com
 You need [Node.js](https://nodejs.org/) 20 or newer.
 
 ```bash
-git clone <[this repo's URL](https://github.com/SoDa1998/GameSong.git)>
+git clone <this repo's URL>
 cd <repo folder>
 npm install
 npm start
