@@ -1,0 +1,16 @@
+{
+  "appId": "com.gamesong.app",
+  "appName": "GameSong",
+  "webDir": "mobile/www",
+  "android": {
+    "path": "android",
+    "backgroundColor": "#111214",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

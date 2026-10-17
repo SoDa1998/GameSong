@@ -5,6 +5,13 @@ node_modules/
 dist/
 dist-*/
 
+# Android: release signing key + its passwords (keep a private backup!), generated web bundle
+android/keystore/
+android/keystore.properties
+*.jks
+*.keystore
+mobile/www/
+
 # Portable-mode data created next to the exe
 GameSong Data/
 GameSong Downloads/

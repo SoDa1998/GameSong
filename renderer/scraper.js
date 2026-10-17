@@ -21,7 +21,8 @@ export function parseAlbumRows(root) {
   root.querySelectorAll('tr').forEach((tr) => {
     if (tr.querySelector('td.albumIconLarge')) return; // "Top 12" tile rows, handled by parseLargeTiles
     const links = [...tr.querySelectorAll('a[href]')].filter((a) => ALBUM_RE.test(pathOf(a.getAttribute('href'))));
-    const titleA = links.find((a) => text(a));
+    // The icon cell can hold a placeholder icon whose text ("audiotrack") isn't the title.
+    const titleA = links.find((a) => !a.closest('td.albumIcon') && !a.querySelector('.material-icons') && text(a));
     if (!titleA) return;
     const path = pathOf(titleA.getAttribute('href'));
     if (seen.has(path)) return;
