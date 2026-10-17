@@ -286,7 +286,8 @@ function createWindow() {
     // Windows/Linux draw min/max/close over the top-right; macOS keeps its traffic lights top-left.
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 20, y: 20 } }
-      : { titleBarOverlay: { color: '#111214', symbolColor: '#9a9ba1', height: 56 } }),
+      // Transparent so the buttons blend with whatever is behind them (main view or Now Playing art)
+      : { titleBarOverlay: { color: '#00000000', symbolColor: '#c4c5ca', height: 56 } }),
     title: 'GameSong',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
