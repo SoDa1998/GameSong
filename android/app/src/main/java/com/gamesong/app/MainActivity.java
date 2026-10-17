@@ -14,6 +14,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(GameSongPlugin.class);
         super.onCreate(savedInstanceState);
 
+        // Sharp album art: serve resized covers from a local cache (see CoverWebViewClient).
+        getBridge().setWebViewClient(new CoverWebViewClient(getBridge(), this));
+
         // Back button: let the app close sheets / Now Playing / go back a page first.
         // If it has nothing to go back to, send the app to the background (music keeps playing).
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {

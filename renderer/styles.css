@@ -71,6 +71,7 @@ img { display: block; }
   grid-template-rows: minmax(0, 1fr) var(--player-h);
   grid-template-areas: "side main queue" "player player player";
   height: 100vh;
+  transition: grid-template-columns .32s var(--ease);
 }
 
 /* ------------------------------------------------------------------ sidebar */
@@ -111,6 +112,25 @@ img { display: block; }
 .side-name.playing { color: var(--text); font-weight: 600; }
 .side-sub { color: var(--sub); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-empty { color: var(--muted); font-size: 12.5px; line-height: 1.5; padding: 8px 8px; }
+
+/* Collapse toggle in the logo row */
+.sidebar-toggle { margin-left: auto; margin-right: -8px; -webkit-app-region: no-drag; }
+.sidebar-toggle > svg { width: 19px; height: 19px; }
+
+/* Collapsed sidebar: a 76px rail with icons / covers only. Labels fade rather than jump. */
+.sidebar { overflow: hidden; }
+.sidebar .label, .side-text { white-space: nowrap; transition: opacity .2s ease; }
+.nav-item, .side-item { overflow: hidden; transition: background .15s, color .15s, padding .32s var(--ease); }
+.side-label { max-height: 32px; overflow: hidden; transition: opacity .2s ease, max-height .32s var(--ease), padding .32s var(--ease); }
+.sidebar-collapsed { --sidebar-w: 76px; }
+.sidebar-collapsed .sidebar .label, .sidebar-collapsed .side-text { opacity: 0; pointer-events: none; }
+.sidebar-collapsed .brand { padding: 0; justify-content: center; }
+.sidebar-collapsed .brand-mark, .sidebar-collapsed .brand-name { display: none; }
+.sidebar-collapsed .sidebar-toggle { margin: 0; }
+.sidebar-collapsed .nav-item { padding: 0 16px; }
+.sidebar-collapsed .side-label { max-height: 0; padding: 0; }
+.sidebar-collapsed .side-item { padding: 6px; }
+.sidebar-collapsed .side-empty { display: none; }
 
 /* ------------------------------------------------------------------ topbar */
 .main { grid-area: main; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--bg); }
@@ -399,7 +419,13 @@ div.head-art { cursor: default; }
 .seg button.on { background: var(--text); color: #111; }
 
 /* ------------------------------------------------------------------ queue drawer */
-.queue-panel { grid-area: queue; width: 340px; background: var(--side); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.queue-panel {
+  grid-area: queue; width: 0; opacity: 0; visibility: hidden; overflow: hidden;
+  background: var(--side); border-left: 0 solid var(--line); display: flex; flex-direction: column; min-height: 0;
+  transition: width .32s var(--ease), opacity .22s ease, border-left-width .32s, visibility 0s linear .32s;
+}
+.queue-panel.open { width: 340px; opacity: 1; visibility: visible; border-left-width: 1px; transition: width .32s var(--ease), opacity .26s ease .06s, border-left-width .32s, visibility 0s; }
+.queue-panel > * { min-width: 340px; } /* content keeps its width while the drawer animates */
 .q-head { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 12px 0 20px; font-weight: 600; font-size: 16px; flex: none; margin-top: 12px; }
 .q-body { flex: 1; overflow-y: auto; padding: 0 12px 16px; }
 .q-label { display: flex; align-items: center; justify-content: space-between; color: var(--sub); font-weight: 500; font-size: 13px; padding: 16px 8px 8px; }
@@ -458,9 +484,9 @@ div.head-art { cursor: default; }
   animation: npIn .35s var(--ease);
   --np-art: clamp(240px, min(62vh, 42vw), 1100px);
 }
-.np.closing { animation: npOut .25s ease-in forwards; }
-@keyframes npIn { from { opacity: 0; transform: translateY(24px); } }
-@keyframes npOut { to { opacity: 0; transform: translateY(24px); } }
+.np.closing { animation: npOut .28s ease-in forwards; }
+@keyframes npIn { from { opacity: 0; transform: translateY(28px) scale(.985); } }
+@keyframes npOut { to { opacity: 0; transform: translateY(28px) scale(.985); } }
 .np-bg { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
 .np-bg img { width: 100%; height: 100%; object-fit: cover; filter: blur(90px) saturate(1.4) brightness(.5); transform: scale(1.4); transition: opacity .8s; }
 .np-bg::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 40%, rgba(12,13,15,.2), rgba(12,13,15,.75) 75%); }
@@ -568,14 +594,13 @@ body.fs .np-top-actions { margin-right: 0; }
 .np-controls .icon-btn.xl > svg { width: clamp(26px, 1.8vw, 36px); height: clamp(26px, 1.8vw, 36px); fill: currentColor; }
 .np-controls .play-btn.xl { width: clamp(64px, 4.6vw, 96px); height: clamp(64px, 4.6vw, 96px); }
 .np-controls .play-btn.xl > svg { width: clamp(24px, 1.7vw, 36px); height: clamp(24px, 1.7vw, 36px); }
-/* Row under the controls: volume on the left, lyrics toggle on the right, both flush with the seek bar's edges */
-.np-utility { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+/* Row under the controls: volume, flush with the seek bar's left edge */
+.np-utility { display: flex; align-items: center; gap: 16px; }
 .np-volume { display: flex; align-items: center; gap: 8px; flex: 0 1 260px; min-width: 0; margin-left: -8px; }
-.np-utility #npLyricsToggle { margin-right: -8px; width: clamp(40px, 2.4vw, 56px); height: clamp(40px, 2.4vw, 56px); color: rgba(255,255,255,.75); }
-.np-utility #npLyricsToggle > svg { width: clamp(20px, 1.2vw, 28px); height: clamp(20px, 1.2vw, 28px); }
-.np-utility #npLyricsToggle:hover { color: #fff; }
-.np-utility #npLyricsToggle.on { color: #111; background: #fff; }
-.np-utility #npLyricsToggle.on::after { display: none; }
+/* Lyrics toggle: last in the like / download / more row, pushed to the right edge */
+.np-actions #npLyricsToggle { margin-left: auto; margin-right: -8px; }
+.np-actions #npLyricsToggle.on { color: #111; background: #fff; }
+.np-actions #npLyricsToggle.on::after { display: none; }
 .np-volume .slider-track { background: rgba(255,255,255,.18); }
 .np-next { border-top: 1px solid rgba(255,255,255,.1); padding-top: 16px; }
 .np-next .q-label { padding: 0 0 8px; color: rgba(255,255,255,.6); }
@@ -626,6 +651,8 @@ body.fs .np-top-actions { margin-right: 0; }
   animation: menuIn .12s ease-out; max-height: 70vh; overflow-y: auto;
 }
 @keyframes menuIn { from { opacity: 0; transform: scale(.97); } }
+.menu.closing { animation: menuOut .13s ease-in forwards; pointer-events: none; }
+@keyframes menuOut { to { opacity: 0; transform: scale(.97); } }
 .menu .m-label { padding: 10px 10px 6px; color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
 .menu button { display: flex; align-items: center; gap: 12px; width: 100%; height: 38px; padding: 0 10px; border-radius: 8px; text-align: left; color: var(--text); font-size: 13.5px; }
 .menu button:hover { background: var(--surface-3); }
@@ -637,8 +664,34 @@ body.fs .np-top-actions { margin-right: 0; }
 .toast { background: #f1f1f3; color: #111; padding: 10px 16px; border-radius: 10px; font-weight: 500; font-size: 13.5px; box-shadow: 0 10px 30px rgba(0,0,0,.4); animation: toastIn .2s ease-out; max-width: 520px; }
 .toast.err { background: #b3263a; color: #fff; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } }
-#lightbox { position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.85); display: grid; place-items: center; cursor: zoom-out; animation: toastIn .15s; }
-#lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+#lightbox { position: fixed; inset: 0; z-index: 80; background: rgba(0,0,0,.85); display: grid; place-items: center; cursor: zoom-out; animation: fadeIn .2s ease; }
+#lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,.6); animation: lbIn .28s var(--ease); }
+#lightbox.closing { animation: fadeOut .18s ease-in forwards; }
+@keyframes fadeIn { from { opacity: 0; } }
+@keyframes fadeOut { to { opacity: 0; } }
+@keyframes lbIn { from { opacity: 0; transform: scale(.96); } }
+
+/* ------------------------------------------------------------------ motion */
+/* Page changes: the old page fades out (a temporary copy above the view) while the new one
+   fades and rises in. */
+.main { position: relative; }
+.view-ghost { position: absolute; left: 0; right: 0; z-index: 3; overflow: hidden; pointer-events: none; background: var(--bg); animation: fadeOut .2s ease forwards; }
+.view.view-in > * { animation: viewIn .34s var(--ease) both; }
+@keyframes viewIn { from { opacity: 0; transform: translateY(8px); } }
+
+/* Covers fade in as they load instead of popping in */
+.card-art img, .rank img, img.side-art, .q-item img, .track .t-main img, img.head-art, .top-card img,
+.slide-art, .slide-bg img, .gallery img, .mini-art img, .page-head .backdrop img { opacity: 0; transition: opacity .4s ease; }
+.card-art img { transition: transform .5s var(--ease), filter .3s, opacity .4s ease; }
+:is(.card-art img, .rank img, img.side-art, .q-item img, .track .t-main img, img.head-art, .top-card img,
+.slide-art, .slide-bg img, .gallery img, .mini-art img, .page-head .backdrop img).is-loaded { opacity: 1; }
+
+/* Smoother state changes on common controls */
+.tab, .chip, .letter, .cat, .pill-btn, .see-all { transition: background .18s ease, color .18s ease, border-color .18s ease, transform .1s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
 
 /* macOS: traffic lights sit top-left (at 20,20), nothing is drawn top-right */
 .platform-darwin .brand { height: 72px; margin-top: 36px; }
@@ -807,7 +860,10 @@ body.fs .np-top-actions { margin-right: 0; }
   .setting { flex-wrap: wrap; gap: 12px; }
 
   /* Queue: full-screen sheet */
-  .queue-panel { position: fixed; inset: 0; z-index: 45; width: auto; border: 0; padding: var(--sat, 0px) 0 var(--sab, 0px); }
+  .queue-panel, .queue-panel.open { position: fixed; inset: 0; z-index: 45; width: auto; border: 0; padding: var(--sat, 0px) 0 var(--sab, 0px); }
+  .queue-panel { transform: translateY(40px); transition: transform .3s var(--ease), opacity .22s ease, visibility 0s linear .3s; }
+  .queue-panel.open { transform: none; transition: transform .3s var(--ease), opacity .22s ease, visibility 0s; }
+  .queue-panel > * { min-width: 0; }
   .q-head { margin-top: 0; }
 
   /* Menus become bottom sheets */
@@ -839,8 +895,7 @@ body.fs .np-top-actions { margin-right: 0; }
   .np-controls .icon-btn { width: 44px; height: 44px; }
   .np-controls .icon-btn.xl { width: 50px; height: 50px; }
   .np-controls .play-btn.xl { width: 66px; height: 66px; }
-  .np-utility { justify-content: flex-end; margin-top: -6px; }
-  .touch .np-volume, .np-next { display: none; }
+  .touch .np-utility, .np-next { display: none; } /* phones use the hardware volume keys */
   .lyr-line { font-size: clamp(19px, 5.6vw, 26px); }
   .lyr-plain .lyr-line { font-size: clamp(16px, 4.6vw, 22px); }
   .lyr-msg { padding: 12px 4px; }

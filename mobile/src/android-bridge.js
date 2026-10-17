@@ -146,6 +146,7 @@ Native.addListener('mediaAction', (e) => mediaListeners.forEach((cb) => cb(e.act
 
 window.khi = {
   platform: 'android',
+  coverBase: '/_gscover/', // resized, cached covers served by CoverWebViewClient
   getPage,
   resolveSong,
   enqueueDownloads: async (items) => {

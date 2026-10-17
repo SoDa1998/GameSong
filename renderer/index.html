@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' https: data:; media-src https: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'" />
+        content="default-src 'self'; img-src 'self' https: data: gscover:; media-src https: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; connect-src 'self'" />
   <title>GameSong</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -14,17 +14,18 @@
     <aside class="sidebar">
       <div class="brand">
         <span class="brand-mark" data-icon="logo"></span>
-        <span class="brand-name">GameSong</span>
+        <span class="brand-name label">GameSong</span>
+        <button class="icon-btn sidebar-toggle" id="sidebarToggle" title="Collapse sidebar (Ctrl+B)" data-icon="sidebarClose"></button>
       </div>
       <nav class="nav">
-        <a class="nav-item" data-nav="home"><span class="ico" data-icon="home"></span><span>Home</span></a>
-        <a class="nav-item" data-nav="search"><span class="ico" data-icon="search"></span><span>Search</span></a>
-        <a class="nav-item" data-nav="browse"><span class="ico" data-icon="browse"></span><span>Browse</span></a>
-        <a class="nav-item" data-nav="charts"><span class="ico" data-icon="chart"></span><span>Charts</span></a>
-        <a class="nav-item" data-nav="library"><span class="ico" data-icon="library"></span><span>Your Library</span></a>
+        <a class="nav-item" data-nav="home" title="Home"><span class="ico" data-icon="home"></span><span class="label">Home</span></a>
+        <a class="nav-item" data-nav="search" title="Search"><span class="ico" data-icon="search"></span><span class="label">Search</span></a>
+        <a class="nav-item" data-nav="browse" title="Browse"><span class="ico" data-icon="browse"></span><span class="label">Browse</span></a>
+        <a class="nav-item" data-nav="charts" title="Charts"><span class="ico" data-icon="chart"></span><span class="label">Charts</span></a>
+        <a class="nav-item" data-nav="library" title="Your Library"><span class="ico" data-icon="library"></span><span class="label">Your Library</span></a>
       </nav>
       <div class="side-divider"></div>
-      <div class="side-label">Playlists</div>
+      <div class="side-label label">Playlists</div>
       <div class="side-list" id="libraryList"></div>
     </aside>
 
@@ -50,7 +51,7 @@
     </main>
 
     <!-- Queue drawer -->
-    <aside class="queue-panel" id="queuePanel" hidden></aside>
+    <aside class="queue-panel" id="queuePanel" aria-hidden="true"></aside>
 
     <!-- Player bar -->
     <footer class="player" id="player">
@@ -125,6 +126,7 @@
           <button class="icon-btn" data-act="np-download" title="Download" data-icon="download"></button>
           <button class="icon-btn" data-act="np-more" title="More options" data-icon="more"></button>
           <span class="quality-badge js-quality"></span>
+          <button class="icon-btn" id="npLyricsToggle" data-act="np-lyrics" title="Show lyrics" data-icon="lyrics"></button>
         </div>
         <div class="np-progress">
           <div class="slider js-seek"><div class="slider-track"><div class="slider-buffer"></div><div class="slider-fill"></div></div><div class="slider-thumb"></div></div>
@@ -142,7 +144,6 @@
             <button class="icon-btn js-mute" title="Mute" data-icon="volume"></button>
             <div class="slider volume js-vol"><div class="slider-track"><div class="slider-fill"></div></div><div class="slider-thumb"></div></div>
           </div>
-          <button class="icon-btn" id="npLyricsToggle" data-act="np-lyrics" title="Show lyrics" data-icon="lyrics"></button>
         </div>
         <div class="np-next" id="npNext"></div>
       </div>

@@ -30,14 +30,33 @@ function setIcon(el, n) {
 const PLACEHOLDER = 'data:image/svg+xml;utf8,' + encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#232428"/><g transform="translate(20 20)" fill="none" stroke="#55565c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS.music}</g></svg>`);
 
-// Fallbacks for broken artwork: /thumbs/ -> /thumbs_small/ -> placeholder.
+// Album art. The CDN only has 60px / 117px thumbnails or the ~1000px original, so the native
+// side (gscover:// in Electron, /_gscover/ on Android) serves the original resized to the
+// requested size and caches it. px: ~256 for small rows, 512 for cards, 800 for page headers;
+// 1000+ means the untouched original.
+const fullCover = (src) => (src || '').replace(/\/thumbs(_small)?\//, '/');
+function art(src, px = 512) {
+  if (!src || src.startsWith('data:')) return src || '';
+  const full = fullCover(src);
+  if (!/^https:\/\/([\w-]+\.)*vgmtreasurechest\.com\//.test(full)) return src;
+  if (!api.coverBase || px >= 1000) return full;
+  return api.coverBase + px + '/' + encodeURIComponent(full);
+}
+const imgSrc = (s, px = 512) => esc(art(s, px) || PLACEHOLDER);
+
+// Fallbacks for broken artwork: resized/full cover -> CDN thumbnail -> small thumbnail -> placeholder.
 document.addEventListener('error', (e) => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement) || !img.getAttribute('src')) return;
-  if (img.src.includes('/thumbs/') && !img.dataset.fb) { img.dataset.fb = '1'; img.src = img.src.replace('/thumbs/', '/thumbs_small/'); }
-  else if (img.src !== PLACEHOLDER) img.src = PLACEHOLDER;
+  const src = img.src;
+  if (!img.dataset.fb0 && (/gscover/.test(src) || (/vgmtreasurechest\.com\//.test(src) && !/\/thumbs(_small)?\//.test(src)))) {
+    img.dataset.fb0 = '1';
+    const m = src.match(/\/\d+\/(https?%3A.+)$/i);
+    const full = m ? decodeURIComponent(m[1]) : src;
+    img.src = full.replace(/\/([^/]+)$/, '/thumbs/$1');
+  } else if (src.includes('/thumbs/') && !img.dataset.fb) { img.dataset.fb = '1'; img.src = src.replace('/thumbs/', '/thumbs_small/'); }
+  else if (src !== PLACEHOLDER) img.src = PLACEHOLDER;
 }, true);
-const imgSrc = (s) => esc(s || PLACEHOLDER);
 
 // ------------------------------------------------------------------ persistence
 const store = {
@@ -77,7 +96,13 @@ function toast(msg, kind = '') {
 }
 
 let menuEl = null;
-function closeMenu() { menuEl?.remove(); menuEl = null; }
+function closeMenu() {
+  const m = menuEl;
+  menuEl = null;
+  if (!m) return;
+  m.classList.add('closing');
+  setTimeout(() => m.remove(), 130);
+}
 /** items: { label, icon, right, onClick } | 'hr' | { header } */
 function openMenu(at, items) {
   closeMenu();
@@ -144,7 +169,6 @@ async function render(restore = false) {
   if (TAB_FOR[route.name]) $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === TAB_FOR[route.name]));
   if (route.name !== 'search' && document.activeElement !== $('#searchInput')) $('#searchInput').value = '';
   viewTracks = []; viewContext = null;
-  view.scrollTop = 0;
   try {
     await VIEWS[route.name](route, tk);
   } catch (err) {
@@ -158,7 +182,41 @@ async function render(restore = false) {
   markPlaying();
 }
 const live = (tk) => tk === renderToken;
-function setView(html) { view.innerHTML = html; hydrateIcons(view); }
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Swap the main view's content. With `animate` (navigation), the old content fades out from
+ * where it was scrolled to while the new content fades in from the top. The old nodes are
+ * moved (not copied) into a temporary layer above the view, so this stays cheap.
+ * Live refreshes (download progress) pass animate:false and keep their scroll position.
+ */
+function setView(html, { animate = true } = {}) {
+  if (animate && !reduceMotion() && view.firstChild) {
+    $$('.view-ghost').forEach((g) => g.remove());
+    const ghost = document.createElement('div');
+    ghost.className = 'view-ghost';
+    ghost.style.top = view.offsetTop + 'px';
+    ghost.style.height = view.clientHeight + 'px';
+    const inner = document.createElement('div');
+    inner.style.transform = `translateY(${-view.scrollTop}px)`;
+    while (view.firstChild) inner.appendChild(view.firstChild);
+    ghost.appendChild(inner);
+    view.parentElement.appendChild(ghost);
+    setTimeout(() => ghost.remove(), 220);
+  }
+  view.innerHTML = html;
+  hydrateIcons(view);
+  if (animate) {
+    view.scrollTop = 0;
+    if (!reduceMotion()) {
+      view.classList.remove('view-in');
+      void view.offsetWidth; // restart the animation
+      view.classList.add('view-in');
+      clearTimeout(setView.t);
+      setView.t = setTimeout(() => view.classList.remove('view-in'), 400);
+    }
+  }
+}
 
 // ------------------------------------------------------------------ building blocks
 function hashHue(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
@@ -182,7 +240,7 @@ function sectionHead(title, linkAttrs = '') {
 }
 function rankRow(a, n) {
   return `<div class="rank ${n == null ? 'compact' : ''}" data-act="album" data-path="${esc(a.path)}">
-    ${n == null ? '' : `<div class="r-n">${n}</div>`}<img loading="lazy" src="${imgSrc(a.thumb)}" alt="">
+    ${n == null ? '' : `<div class="r-n">${n}</div>`}<img loading="lazy" src="${imgSrc(a.thumb, 256)}" alt="">
     <div style="min-width:0"><div class="r-title">${esc(a.title)}</div><div class="r-sub">${esc([a.type, a.platforms].filter(Boolean).join(' · ') || 'Album')}</div></div>
     ${n == null ? '' : `<div class="r-meta">${esc(a.year || '')}</div>`}
     <button class="card-play" data-act="play-album" data-path="${esc(a.path)}" title="Play">${ic('play')}</button></div>`;
@@ -248,7 +306,7 @@ const VIEWS = {
     ];
     const hero = slides.length ? `<div class="hero" id="hero">${slides.map((s, i) => `
       <div class="slide ${i === 0 ? 'active' : ''}" data-i="${i}">
-        <div class="slide-bg"><img src="${imgSrc(s.thumb)}" alt=""></div>
+        <div class="slide-bg"><img src="${imgSrc(s.thumb, 256)}" alt=""></div>
         <div class="slide-text"><div class="eyebrow">${esc(s.eyebrow)}</div>
           <h2 class="slide-title">${esc(s.title)}</h2>
           <div class="slide-sub">${esc([s.type, s.year, s.platforms].filter(Boolean).join(' · ') || 'Video game soundtrack')}</div>
@@ -325,7 +383,7 @@ const VIEWS = {
     const isLetter = r.path.startsWith('/game-soundtracks/browse/');
     const heading = r.title || res.title.replace(/^Top \d+\s*/i, '').replace(/\s*Albums$/i, '') || 'Albums';
     const cover = res.featured[0]?.thumb || res.albums[0]?.thumb;
-    let html = `<div class="page-head"><div class="backdrop">${cover ? `<img src="${imgSrc(cover)}" alt="">` : ''}</div>
+    let html = `<div class="page-head"><div class="backdrop">${cover ? `<img src="${imgSrc(cover, 256)}" alt="">` : ''}</div>
       ${cover ? `<img class="head-art" style="width:168px;height:168px;cursor:default" src="${imgSrc(cover)}" alt="">` : ''}
       <div class="head-text"><div class="eyebrow">${isLetter ? 'Browse A–Z' : 'Collection'}</div><h1 class="head-title">${esc(heading)}</h1>
       <div class="head-meta"><span>Page <b>${res.page}</b> of ${res.pages}</span><span>${plural(res.albums.length, 'album')} on this page</span></div></div></div><div class="page">`;
@@ -361,8 +419,8 @@ const VIEWS = {
       a.formats.length ? `<span>${a.formats.map(esc).join(' / ')}</span>` : '',
     ].join('');
     setView(`
-      <div class="page-head"><div class="backdrop"><img src="${imgSrc(a.cover)}" alt=""></div>
-        ${a.cover ? `<img class="head-art" data-act="lightbox" data-src="${esc(a.images[0]?.full)}" src="${imgSrc(a.cover)}" alt="">` : `<div class="head-art">${ic('disc')}</div>`}
+      <div class="page-head"><div class="backdrop"><img src="${imgSrc(a.cover, 256)}" alt=""></div>
+        ${a.cover ? `<img class="head-art" data-act="lightbox" data-src="${esc(a.images[0]?.full)}" src="${imgSrc(a.cover, 800)}" alt="">` : `<div class="head-art">${ic('disc')}</div>`}
         <div class="head-text"><div class="eyebrow">${esc(m['Album type'] || 'Album')}</div><h1 class="head-title ${a.title.length > 38 ? 'long' : ''}" title="${esc(a.title)}">${esc(a.title)}</h1>
         <div class="head-meta">${metaBits}</div></div></div>
       <div class="action-bar">
@@ -411,7 +469,7 @@ const VIEWS = {
       <div class="setting"><div><div class="s-title">Saved lyric choices</div><div class="s-desc">Lyrics you picked by hand for ${plural(Object.keys(LYR.choices).length, 'song')}.</div></div><button class="pill-btn" data-act="clear-lyrics">Clear</button></div>
       <div class="setting"><div><div class="s-title">About</div><div class="s-desc">GameSong is an unofficial player for the KHInsider video game music archive. Music is streamed from downloads.khinsider.com; lyrics come from LRCLIB. Icons by Lucide, typeface Inter.</div></div>
         <button class="pill-btn" data-act="open-site" data-url="${SITE}/">${icSpan('external')}KHInsider</button></div>
-      <div class="setting desktop-only"><div class="s-desc"><b style="color:var(--text);font-weight:500">Shortcuts</b> · Space play/pause · Ctrl+←/→ previous/next · Ctrl+↑/↓ volume · Ctrl+K search · N Now Playing · L lyrics · F11 full screen · Alt+← back</div></div>
+      <div class="setting desktop-only"><div class="s-desc"><b style="color:var(--text);font-weight:500">Shortcuts</b> · Space play/pause · Ctrl+←/→ previous/next · Ctrl+↑/↓ volume · Ctrl+K search · Ctrl+B sidebar · N Now Playing · L lyrics · F11 full screen · Alt+← back</div></div>
     </div>`);
     $('#concSel').addEventListener('change', async (e) => { state.settings = await api.setSettings({ concurrency: +e.target.value }); toast('Saved'); });
   },
@@ -444,7 +502,7 @@ function trackTable(tracks, { formats = [], showAlbum = false, discs = false } =
     const fm = Object.entries(t.sizes || {}).map(([f, s]) => `<span class="fmt ${LOSSLESS.has(f) ? 'lossless' : ''}" data-act="dl-fmt" data-fmt="${esc(f)}" title="Download ${esc(f)} (${esc(s)})">${esc(f)} <span>${esc(s)}</span></span>`).join('');
     return pre + `<div class="track" data-idx="${i}" data-id="${esc(t.id)}">
       <div class="num"><span class="n">${showAlbum ? i + 1 : esc(t.num)}</span><span class="eqw"><span class="eq"><i></i><i></i><i></i></span></span><button class="play-ico" data-act="track-play" title="Play">${ic('play')}</button></div>
-      <div class="t-main">${showAlbum ? `<img loading="lazy" src="${imgSrc(t.cover)}" alt="">` : ''}<div class="t-text"><div class="t-name">${esc(t.name)}</div>
+      <div class="t-main">${showAlbum ? `<img loading="lazy" src="${imgSrc(t.cover, 256)}" alt="">` : ''}<div class="t-text"><div class="t-name">${esc(t.name)}</div>
         ${showAlbum ? `<div class="t-sub"><a data-act="album" data-path="${esc(t.albumPath)}">${esc(t.albumTitle)}</a></div>` : ''}</div></div>
       <div class="fmts">${fm}</div>
       <div class="dur">${esc(t.duration)}</div>
@@ -462,9 +520,9 @@ function renderLibrary() {
   const doneDl = [...DL.values()].filter((d) => d.state === 'done').length;
   const playingAlbum = P.current?.albumPath;
   const fixed = `
-    <div class="side-item ${cur.name === 'liked' ? 'active' : ''}" data-act="nav" data-view="liked"><div class="side-art" style="background:linear-gradient(135deg,#4b4f6b,#2a2b33)">${ic('heart')}</div><div class="side-text"><div class="side-name">Liked Songs</div><div class="side-sub">${plural(state.liked.length, 'song')}</div></div></div>
-    <div class="side-item ${cur.name === 'downloads' ? 'active' : ''}" data-act="nav" data-view="downloads"><div class="side-art">${ic('download')}</div><div class="side-text"><div class="side-name">Downloads</div><div class="side-sub">${activeDl ? `${activeDl} in progress` : plural(doneDl, 'file')}</div></div></div>`;
-  const albums = state.saved.map((a) => `<div class="side-item ${cur.name === 'album' && cur.path === a.path ? 'active' : ''}" data-act="album" data-path="${esc(a.path)}"><img class="side-art" loading="lazy" src="${imgSrc(a.thumb)}" alt=""><div class="side-text"><div class="side-name ${playingAlbum === a.path ? 'playing' : ''}">${esc(a.title)}</div><div class="side-sub">${esc(['Album', a.year].filter(Boolean).join(' · '))}</div></div></div>`).join('');
+    <div class="side-item ${cur.name === 'liked' ? 'active' : ''}" data-act="nav" data-view="liked" title="Liked Songs"><div class="side-art" style="background:linear-gradient(135deg,#4b4f6b,#2a2b33)">${ic('heart')}</div><div class="side-text"><div class="side-name">Liked Songs</div><div class="side-sub">${plural(state.liked.length, 'song')}</div></div></div>
+    <div class="side-item ${cur.name === 'downloads' ? 'active' : ''}" data-act="nav" data-view="downloads" title="Downloads"><div class="side-art">${ic('download')}</div><div class="side-text"><div class="side-name">Downloads</div><div class="side-sub">${activeDl ? `${activeDl} in progress` : plural(doneDl, 'file')}</div></div></div>`;
+  const albums = state.saved.map((a) => `<div class="side-item ${cur.name === 'album' && cur.path === a.path ? 'active' : ''}" data-act="album" data-path="${esc(a.path)}" title="${esc(a.title)}"><img class="side-art" loading="lazy" src="${imgSrc(a.thumb, 256)}" alt=""><div class="side-text"><div class="side-name ${playingAlbum === a.path ? 'playing' : ''}">${esc(a.title)}</div><div class="side-sub">${esc(['Album', a.year].filter(Boolean).join(' · '))}</div></div></div>`).join('');
   const hint = state.saved.length ? '' : '<div class="side-empty">Save albums with the ⊕ button and they’ll appear here.</div>';
   $('#libraryList').innerHTML = fixed + albums + hint;
 }
@@ -585,7 +643,7 @@ function setLoading(on) { P.loading = on; $$('.js-play').forEach((b) => b.classL
 function updateNowPlaying() {
   const t = P.current;
   document.body.classList.toggle('no-track', !t);
-  $('#npArt').src = t?.cover || '';
+  $('#npArt').src = t?.cover ? art(t.cover, 256) : '';
   $('#npTitle').textContent = t?.name || '';
   $('#npSub').textContent = t?.albumTitle || '';
   $('#miniArt').style.visibility = t ? 'visible' : 'hidden';
@@ -594,7 +652,7 @@ function updateNowPlaying() {
   $$('.js-quality').forEach((q) => { q.textContent = t && audio.src ? P.format : ''; q.classList.toggle('lossless', LOSSLESS.has(P.format)); });
   document.title = t ? `${t.name} · GameSong` : 'GameSong';
   if ('mediaSession' in navigator && t) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.albumTitle, album: t.albumTitle, artwork: t.cover ? [{ src: t.cover, sizes: '300x300' }] : [] });
+    navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.albumTitle, album: t.albumTitle, artwork: t.cover ? [{ src: fullCover(t.cover), sizes: '1000x1000' }] : [] });
   }
   markPlaying(); renderQueue(); renderLibrary(); renderNP();
   pushMedia();
@@ -628,7 +686,7 @@ function pushMedia() {
   api.mediaUpdate({
     title: t.name,
     album: t.albumTitle,
-    art: (t.cover || '').replace('/thumbs_small/', '/thumbs/'),
+    art: fullCover(t.cover), // the native side decodes it at notification size
     playing: !audio.paused,
     position: audio.currentTime || 0,
     duration: audio.duration || t.durSec || 0,
@@ -727,10 +785,12 @@ function restoreSession() {
 }
 
 // ------------------------------------------------------------------ queue drawer
-const qItem = (x, i, cur = false, removable = true) => `<div class="q-item ${cur ? 'current' : ''}" data-act="q-play" data-i="${i}"><img src="${imgSrc(x.cover)}" alt=""><div class="q-t"><div class="q-n">${esc(x.name)}</div><div class="q-s">${esc(x.albumTitle)}</div></div>${cur || !removable ? '' : `<button class="icon-btn" data-act="q-remove" data-i="${i}" title="Remove from queue">${ic('close')}</button>`}</div>`;
+const qItem = (x, i, cur = false, removable = true) => `<div class="q-item ${cur ? 'current' : ''}" data-act="q-play" data-i="${i}"><img src="${imgSrc(x.cover, 256)}" alt=""><div class="q-t"><div class="q-n">${esc(x.name)}</div><div class="q-s">${esc(x.albumTitle)}</div></div>${cur || !removable ? '' : `<button class="icon-btn" data-act="q-remove" data-i="${i}" title="Remove from queue">${ic('close')}</button>`}</div>`;
 function renderQueue() {
   const panel = $('#queuePanel');
-  panel.hidden = !state.prefs.queueOpen;
+  // The drawer slides/fades via the .open class; its content stays during the closing animation.
+  panel.classList.toggle('open', !!state.prefs.queueOpen);
+  panel.setAttribute('aria-hidden', String(!state.prefs.queueOpen));
   $('#btnQueue').classList.toggle('on', state.prefs.queueOpen);
   if (!state.prefs.queueOpen) return;
   const t = P.current;
@@ -776,22 +836,19 @@ function renderNP() {
   renderNPNext();
   if (state.prefs.npLyrics) { ensureLyrics(t); renderLyrics(); }
 }
-// Show the thumbnail immediately, then swap in the album's full-resolution cover once it
-// has loaded, so the large (and full-screen) artwork stays sharp.
+// Show the (usually already cached) 512px cover immediately, then swap in the full-size
+// original once it has loaded, so the large / full-screen artwork stays sharp.
 let npArtFor = null;
 function setNPArt(t) {
   if (npArtFor === t.albumPath) return;
   npArtFor = t.albumPath;
-  const thumb = (t.cover || '').replace('/thumbs_small/', '/thumbs/') || PLACEHOLDER;
-  $('#npBigArt').src = thumb;
-  $('#npBg').src = thumb;
-  getAlbum(t.albumPath).then((a) => {
-    const full = a.images.find((im) => im.thumb === t.cover)?.full || a.images[0]?.full;
-    if (!full || npArtFor !== t.albumPath) return;
-    const img = new Image();
-    img.onload = () => { if (npArtFor === t.albumPath) $('#npBigArt').src = full; };
-    img.src = full;
-  }).catch(() => {});
+  if (!t.cover) { $('#npBigArt').src = PLACEHOLDER; $('#npBg').src = PLACEHOLDER; return; }
+  $('#npBigArt').src = art(t.cover, 512);
+  $('#npBg').src = art(t.cover, 256);
+  const full = art(t.cover, 1600);
+  const img = new Image();
+  img.onload = () => { if (npArtFor === t.albumPath) $('#npBigArt').src = full; };
+  img.src = full;
 }
 function renderNPNext() {
   if (np.hidden) return;
@@ -1034,7 +1091,7 @@ function refreshDownloads() {
     dlRefreshPending = false;
     if (nav.stack[nav.idx]?.name !== 'downloads') return;
     const top = view.scrollTop;
-    setView(downloadsHtml());
+    setView(downloadsHtml(), { animate: false });
     view.scrollTop = top;
   });
 }
@@ -1164,7 +1221,7 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'album-more': albumMenu(el, curRoute.path); break;
-    case 'lightbox': if (el.dataset.src) { $('#lightbox img').src = el.dataset.src; $('#lightbox').hidden = false; } break;
+    case 'lightbox': if (el.dataset.src) openLightbox(el.dataset.src); break;
     case 'q-play': if (!e.target.closest('[data-act="q-remove"]')) playAt(+el.dataset.i); break;
     case 'q-remove': { e.stopPropagation(); P.queue.splice(+el.dataset.i, 1); renderQueue(); renderNPNext(); persistSession(true); break; }
     case 'queue-clear': P.queue = P.queue.slice(0, P.idx + 1); P.unshuffled = null; renderQueue(); renderNPNext(); persistSession(true); break;
@@ -1221,7 +1278,39 @@ document.addEventListener('contextmenu', (e) => {
   else if (albumEl) { e.preventDefault(); albumMenu({ x: e.clientX, y: e.clientY }, albumEl.dataset.path); }
 });
 
-$('#lightbox').addEventListener('click', () => { $('#lightbox').hidden = true; });
+// Artwork viewer: fades in and out.
+const lightbox = $('#lightbox');
+function openLightbox(src) {
+  lightbox.querySelector('img').src = src;
+  lightbox.classList.remove('closing');
+  lightbox.hidden = false;
+}
+function closeLightbox() {
+  if (lightbox.hidden || lightbox.classList.contains('closing')) return;
+  lightbox.classList.add('closing');
+  setTimeout(() => { if (lightbox.classList.contains('closing')) { lightbox.hidden = true; lightbox.classList.remove('closing'); } }, 180);
+}
+lightbox.addEventListener('click', closeLightbox);
+
+// Collapsible sidebar (desktop): icons only when collapsed; remembered between launches.
+function applySidebar() {
+  const collapsed = !!state.prefs.sidebarCollapsed;
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  const b = $('#sidebarToggle');
+  setIcon(b, collapsed ? 'sidebarOpen' : 'sidebarClose');
+  b.title = collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)';
+}
+function toggleSidebar() {
+  state.prefs.sidebarCollapsed = !state.prefs.sidebarCollapsed;
+  savePrefs();
+  applySidebar();
+}
+$('#sidebarToggle').addEventListener('click', toggleSidebar);
+
+// Fade images in once they've loaded instead of popping in.
+document.addEventListener('load', (e) => {
+  if (e.target instanceof HTMLImageElement) e.target.classList.add('is-loaded');
+}, true);
 $('#navBack').addEventListener('click', back);
 $('#navFwd').addEventListener('click', forward);
 window.addEventListener('mouseup', (e) => { if (e.button === 3) back(); if (e.button === 4) forward(); });
@@ -1275,7 +1364,7 @@ searchInput.addEventListener('focus', () => { if (nav.stack[nav.idx]?.name !== '
 // Returning false lets Android send the app to the background.
 window.__gsBack = () => {
   if (menuEl) { closeMenu(); return true; }
-  if (!$('#lightbox').hidden) { $('#lightbox').hidden = true; return true; }
+  if (!$('#lightbox').hidden) { closeLightbox(); return true; }
   if (npOpen()) { closeNP(); return true; }
   if (state.prefs.queueOpen) { state.prefs.queueOpen = false; savePrefs(); renderQueue(); return true; }
   if (document.activeElement === searchInput) searchInput.blur();
@@ -1290,9 +1379,10 @@ document.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey; // Ctrl on Windows, Cmd on macOS
   if ((mod && e.key.toLowerCase() === 'k') || (e.key === '/' && !typing)) { e.preventDefault(); closeNP(); searchInput.focus(); searchInput.select(); return; }
   if (e.key === 'F11') { e.preventDefault(); api.setFullscreen(); return; }
+  if (mod && e.key.toLowerCase() === 'b' && !isPhone()) { e.preventDefault(); toggleSidebar(); return; }
   if (e.key === 'Escape') {
     if (menuEl) return closeMenu();
-    if (!$('#lightbox').hidden) { $('#lightbox').hidden = true; return; }
+    if (!$('#lightbox').hidden) { closeLightbox(); return; }
     if (document.body.classList.contains('fs')) { api.setFullscreen(false); return; }
     if (npOpen()) { closeNP(); return; }
   }
@@ -1321,6 +1411,7 @@ view.addEventListener('scroll', closeMenu, { passive: true });
   hydrateIcons();
   state.settings = await api.getSettings();
   applyVolume();
+  applySidebar();
   updateModeButtons();
   restoreSession();
   if (!P.current) updateNowPlaying();

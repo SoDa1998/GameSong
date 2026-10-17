@@ -120,8 +120,20 @@ public class MediaService extends Service {
                 c = (HttpURLConnection) new URL(url).openConnection();
                 c.setConnectTimeout(10_000);
                 c.setReadTimeout(15_000);
-                try (InputStream in = c.getInputStream()) {
-                    Bitmap bmp = BitmapFactory.decodeStream(in);
+                try (InputStream in = c.getInputStream(); java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream()) {
+                    byte[] buf = new byte[32768];
+                    int n;
+                    while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                    byte[] data = bo.toByteArray();
+                    // Full-size covers can be 1000px+; decode at roughly 512px for the notification.
+                    BitmapFactory.Options o = new BitmapFactory.Options();
+                    o.inJustDecodeBounds = true;
+                    BitmapFactory.decodeByteArray(data, 0, data.length, o);
+                    int sample = 1;
+                    while (Math.max(o.outWidth, o.outHeight) / (sample * 2) >= 512) sample *= 2;
+                    o = new BitmapFactory.Options();
+                    o.inSampleSize = sample;
+                    Bitmap bmp = BitmapFactory.decodeByteArray(data, 0, data.length, o);
                     main.post(() -> {
                         if (url.equals(artUrl) && bmp != null) {
                             art = bmp;

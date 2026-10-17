@@ -2,9 +2,13 @@
 // All requests to khinsider go through Chromium's network stack (net.fetch), which
 // Cloudflare accepts where plain Node/curl clients get blocked. If a page still comes
 // back as a Cloudflare challenge we fall back to loading it in a hidden browser window.
-const { app, BrowserWindow, ipcMain, net, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, net, dialog, shell, protocol, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
+
+// gscover://img/<px>/<encoded full-size URL> serves resized, cached album art (see serveCover).
+protocol.registerSchemesAsPrivileged([{ scheme: 'gscover', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 // Portable build: electron-builder's portable exe sets PORTABLE_EXECUTABLE_DIR to the folder the
 // exe lives in. Keep all app data (and downloads, by default) beside it instead of in AppData.
@@ -240,6 +244,60 @@ function registerIpc() {
   });
 }
 
+// ---------------------------------------------------------------- album art
+// KHInsider's CDN only has 60px / 117px thumbnails or the full ~1000px original (often a
+// 0.5-1 MB PNG). Download the original once, scale it to the size the UI asks for, and keep
+// a JPEG in userData/covers so covers stay sharp without re-downloading megabytes.
+const coverDir = () => path.join(app.getPath('userData'), 'covers');
+const coverJobs = new Map();
+
+async function serveCover(request) {
+  const u = new URL(request.url);
+  const [, pxStr, ...rest] = u.pathname.split('/');
+  const px = Math.max(64, Math.min(1600, parseInt(pxStr, 10) || 512));
+  const src = decodeURIComponent(rest.join('/'));
+  let host;
+  try { host = new URL(src).hostname; } catch { return new Response(null, { status: 400 }); }
+  if (!src.startsWith('https://') || !ALLOWED_MEDIA_HOST.test(host)) return new Response(null, { status: 403 });
+
+  const file = path.join(coverDir(), `${crypto.createHash('sha1').update(src).digest('hex')}-${px}.jpg`);
+  const headers = { 'content-type': 'image/jpeg', 'cache-control': 'max-age=31536000' };
+  if (fs.existsSync(file)) return new Response(fs.readFileSync(file), { headers });
+
+  if (!coverJobs.has(file)) {
+    coverJobs.set(file, (async () => {
+      const res = await net.fetch(src);
+      if (!res.ok) return { status: res.status };
+      const original = Buffer.from(await res.arrayBuffer());
+      let img = nativeImage.createFromBuffer(original);
+      // nativeImage can't decode every format (e.g. WebP): pass the original through.
+      if (img.isEmpty()) return { body: original, type: res.headers.get('content-type') || 'image/jpeg' };
+      const { width, height } = img.getSize();
+      if (Math.max(width, height) > px) img = img.resize(width >= height ? { width: px, quality: 'best' } : { height: px, quality: 'best' });
+      const out = img.toJPEG(88);
+      await fs.promises.mkdir(coverDir(), { recursive: true });
+      await fs.promises.writeFile(file, out);
+      return { body: out, type: 'image/jpeg' };
+    })().finally(() => setTimeout(() => coverJobs.delete(file), 1000)));
+  }
+  try {
+    const r = await coverJobs.get(file);
+    if (!r.body) return new Response(null, { status: r.status || 502 });
+    return new Response(r.body, { headers: { ...headers, 'content-type': r.type } });
+  } catch {
+    return new Response(null, { status: 502 });
+  }
+}
+
+// Keep the cover cache bounded: drop the oldest files beyond ~4000 (a few hundred MB at most).
+function pruneCovers() {
+  fs.promises.readdir(coverDir()).then(async (names) => {
+    if (names.length <= 4000) return;
+    const stats = await Promise.all(names.map(async (n) => ({ n, t: (await fs.promises.stat(path.join(coverDir(), n))).mtimeMs })));
+    stats.sort((a, b) => a.t - b.t).slice(0, names.length - 3000).forEach(({ n }) => fs.promises.unlink(path.join(coverDir(), n)).catch(() => {}));
+  }).catch(() => {});
+}
+
 // ---------------------------------------------------------------- lyrics
 // LRCLIB (https://lrclib.net) is a free, open lyrics database with time-synced lyrics.
 const LYRICS_UA = 'GameSong/1.0 (https://downloads.khinsider.com client)';
@@ -314,6 +372,8 @@ app.userAgentFallback = app.userAgentFallback
 
 app.whenReady().then(() => {
   loadSettings();
+  protocol.handle('gscover', serveCover);
+  pruneCovers();
   registerIpc();
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

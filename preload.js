@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld('khi', {
   setFullscreen: (on) => ipcRenderer.invoke('win:fullscreen', on),
   onFullscreen: (cb) => ipcRenderer.on('win:fs', (_e, on) => cb(on)),
   platform: process.platform,
+  coverBase: 'gscover://img/', // resized, cached covers served by main.js
 });

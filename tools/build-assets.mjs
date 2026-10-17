@@ -66,6 +66,8 @@ const ICONS = {
   retry: 'rotate-cw',
   nowPlaying: 'square-play',
   image: 'image',
+  sidebarClose: 'panel-left-close',
+  sidebarOpen: 'panel-left-open',
 };
 
 const out = {};
