@@ -850,10 +850,17 @@ function setNPArt(t) {
   img.onload = () => { if (npArtFor === t.albumPath) $('#npBigArt').src = full; };
   img.src = full;
 }
+// The whole queue in a fixed-height list (three rows tall): played tracks above, the current
+// one scrolled to the top, upcoming below. Click any row to jump to it.
 function renderNPNext() {
   if (np.hidden) return;
-  const up = P.queue.slice(P.idx + 1, P.idx + 4);
-  $('#npNext').innerHTML = up.length ? `<div class="q-label">Up next</div>${up.map((x, k) => qItem(x, P.idx + 1 + k, false, false)).join('')}` : '';
+  const box = $('#npNext');
+  if (!P.queue.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="q-label"><span>Playing Queue</span><span class="q-count">${P.idx + 1} / ${P.queue.length}</span></div>
+    <div class="np-queue">${P.queue.map((x, i) => qItem(x, i, i === P.idx, false).replace('class="q-item', `class="q-item${i < P.idx ? ' played' : ''}`)).join('')}</div>`;
+  const list = box.querySelector('.np-queue');
+  const cur = list.querySelector('.q-item.current');
+  if (cur) list.scrollTop = cur.offsetTop; // .np-queue is position:relative, so this is list-relative
 }
 
 // ------------------------------------------------------------------ lyrics (LRCLIB)

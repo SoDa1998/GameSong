@@ -603,10 +603,24 @@ body.fs .np-top-actions { margin-right: 0; }
 .np-actions #npLyricsToggle.on::after { display: none; }
 .np-volume .slider-track { background: rgba(255,255,255,.18); }
 .np-next { border-top: 1px solid rgba(255,255,255,.1); padding-top: 16px; }
-.np-next .q-label { padding: 0 0 8px; color: rgba(255,255,255,.6); }
-.np-next .q-item { padding: 6px 0; }
-.np-next .q-item:hover { background: none; }
-.np-next .q-item:hover .q-n { text-decoration: underline; }
+.np-next .q-label { padding: 0 0 8px; color: rgba(255,255,255,.6); display: flex; justify-content: space-between; }
+.np-next .q-count { color: rgba(255,255,255,.4); font-variant-numeric: tabular-nums; }
+/* Playing Queue: exactly three rows tall (thumbnail + 12px padding each), scrolls through the
+   whole queue. Rows extend 8px past the column on each side so hover backgrounds don't touch
+   the thumbnails, while the thumbnails stay aligned with the content above. */
+.np-queue {
+  --qi: clamp(40px, 2.6vw, 64px);
+  position: relative; height: calc(3 * (var(--qi) + 12px)); overflow-y: auto; overscroll-behavior: contain;
+  margin: 0 -8px; padding: 0;
+}
+.np-queue::-webkit-scrollbar { width: 8px; }
+.np-queue::-webkit-scrollbar-thumb { border-width: 2px; background-color: rgba(255,255,255,.18); }
+.np-next .q-item { padding: 6px 8px; border-radius: 8px; transition: background .15s, opacity .15s; }
+.np-next .q-item:hover { background: rgba(255,255,255,.07); }
+.np-next .q-item.played { opacity: .5; }
+.np-next .q-item.played:hover { opacity: .85; }
+.np-next .q-item.current { background: rgba(255,255,255,.1); }
+.np-next .q-item.current .q-n { color: #fff; font-weight: 700; }
 .np-next .q-s { color: rgba(255,255,255,.55); }
 
 /* Scale the Now Playing chrome with the window so it holds up in full screen */
@@ -631,7 +645,7 @@ body.fs .np-top-actions { margin-right: 0; }
 .np-volume .slider-track { height: clamp(4px, .25vw, 6px); }
 .np-next .q-label { font-size: clamp(13px, .75vw, 17px); }
 .np-next .q-item { gap: clamp(12px, .8vw, 18px); }
-.np-next .q-item img { width: clamp(40px, 2.6vw, 64px); height: clamp(40px, 2.6vw, 64px); }
+.np-next .q-item img { width: var(--qi); height: var(--qi); }
 .np-next .q-n { font-size: clamp(14px, .85vw, 19px); }
 .np-next .q-s { font-size: clamp(12px, .7vw, 15px); }
 .lyr-foot { font-size: clamp(12px, .7vw, 15px); }
