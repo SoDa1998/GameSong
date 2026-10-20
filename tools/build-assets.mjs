@@ -69,6 +69,7 @@ const ICONS = {
   sidebarClose: 'panel-left-close',
   sidebarOpen: 'panel-left-open',
   exclusive: 'headphones',
+  support: 'hand-heart',
 };
 
 const out = {};

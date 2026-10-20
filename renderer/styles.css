@@ -115,7 +115,8 @@ img { display: block; }
 
 /* Options button pinned to the bottom of the sidebar */
 .side-footer { flex: none; border-top: 1px solid var(--line); margin: 0 -12px; padding: 8px 12px 12px; }
-.options-btn { width: 100%; text-align: left; }
+.options-btn, .support-btn { width: 100%; text-align: left; }
+.support-btn .ico { color: #ff7a9a; }
 .options-btn.open { color: var(--text); background: var(--surface-2); }
 .menu.options-menu { min-width: 260px; }
 

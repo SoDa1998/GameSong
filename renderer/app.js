@@ -4,6 +4,7 @@ import { PlaybackEngine } from './engine.js';
 
 const api = window.khi;
 const SITE = 'https://downloads.khinsider.com';
+const SUPPORT_URL = SITE + '/forums/index.php?account/upgrades';   // KHInsider donations / VIP
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1410,6 +1411,7 @@ document.addEventListener('click', async (e) => {
     case 'searches-clear': state.searches = []; store.set('searches', []); render(); break;
     case 'clear-lyrics': LYR.choices = {}; store.set('lyricsChoice', {}); LYR.cache.clear(); render(); break;
     case 'open-site': api.openExternal(el.dataset.url); break;
+    case 'support': api.openExternal(SUPPORT_URL); break;
     // Now Playing
     case 'np-close': closeNP(); break;
     case 'np-lyrics': setLyricsMode(!state.prefs.npLyrics); break;
@@ -1502,6 +1504,7 @@ function openOptions() {
     'hr',
     { label: 'Settings', icon: 'settings', onClick: () => go({ name: 'settings' }) },
     { label: 'Visit KHInsider', icon: 'external', onClick: () => api.openExternal(SITE + '/') },
+    { label: 'Support KHInsider', icon: 'support', onClick: () => api.openExternal(SUPPORT_URL) },
   );
   openMenu(btn, items);
   const m = optionsMenu = menuEl;
