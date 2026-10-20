@@ -10,6 +10,18 @@ native/bin/
 GameSong Data/
 GameSong Downloads/
 
+# Secrets: keys, signing files and credentials must never be committed
+.env
+.env.*
+*.keystore
+*.jks
+keystore.properties
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+
 # Logs and OS/editor clutter
 *.log
 npm-debug.log*
