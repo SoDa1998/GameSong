@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('khi', {
   onDownloadUpdate: (cb) => ipcRenderer.on('dl:update', (_e, u) => cb(u)),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
-  chooseDownloadDir: () => ipcRenderer.invoke('settings:chooseDir'),
+  chooseDownloadDir: (current) => ipcRenderer.invoke('settings:chooseDir', current),
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
   searchLyrics: (params) => ipcRenderer.invoke('lyrics:search', params),
   exclusive: {

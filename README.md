@@ -42,7 +42,7 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 - **Listen history**: every song you play, newest first. Home shows the latest eight; **See all** opens the full history (up to 200 songs) grouped by day, where you can replay, download or clear it.
 - **Search**: shows a top result. Filter by album type and sort by relevance, popularity, date or year.
   - Before you type, it's also where you browse: by album type, by platform, A–Z, or the charts.
-  - **Recent searches** appear on the Search page before you type. Click one to search again, or × to remove it. Searches made while typing are saved once, as the finished query.
+  - **Recent searches** appear on the Search page before you type. They include the albums you opened or played from results (with their covers) and the terms you searched. Click one to open it again, × to remove it, or **Clear recent searches**. Searches made while typing are saved once, as the finished query.
 - **Charts**: the site's chart pages, such as the Top 40, Most favorited and the all-time Top 1000.
 - **Your Library**: Liked Songs, saved albums, recently played albums and downloads.
 - **Sidebar**: collapses to an icon-only rail with the button next to the logo or `Ctrl + B`.
@@ -53,6 +53,7 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
   - Playback controls centered under the seek bar, with the lyrics button in the like / download row.
   - A scrollable **Playing Queue** with the whole queue: played tracks above, the current one highlighted, upcoming below. Click any row to play it.
   - Full-screen mode (the button, or `F11`). Text and controls scale with the screen.
+- **Settings autosave**: on by default, so every change is saved as you make it and a "Saved" note confirms it. Turn **Autosave** off to try changes first. They apply right away, and a bar lets you **Save changes** or **Discard** them. Unsaved changes are dropped when you quit.
 - **Appearance** (Settings → Appearance, or the Options menu):
   - **Display mode**: Dark, Light, System (follows Windows' light or dark mode, live), or Custom, which builds the whole theme from one colour you pick. Dark colours give a dark theme, light colours a light one.
   - **Accent colour**: preset swatches or any colour, used for play buttons, progress bars, selected chips and liked songs. Default keeps the app black and white.

@@ -66,13 +66,86 @@ const state = {
   saved: store.get('saved', []),
   recent: store.get('recent', []),
   history: store.get('history', []),     // songs played, newest first: slimTrack + playedAt
-  searches: store.get('searches', []),   // { q, at }, newest first
-  prefs: Object.assign({ stream: 'MP3', volume: 0.8, muted: false, shuffle: false, repeat: 'off', queueOpen: false, npLyrics: false }, store.get('prefs', {})),
+  // Recent searches, newest first: { kind: 'query', q, at } or { kind: 'album', path, title, thumb, year, type, at }
+  searches: store.get('searches', []).map((s) => (s.kind ? s : { kind: 'query', q: s.q, at: s.at })),
+  prefs: Object.assign({ stream: 'MP3', volume: 0.8, muted: false, shuffle: false, repeat: 'off', queueOpen: false, npLyrics: false, autosave: true }, store.get('prefs', {})),
   settings: { downloadDir: '', concurrency: 3 },
 };
 const likedIds = () => new Set(state.liked.map((t) => t.id));
 let likedSet = likedIds();
-const savePrefs = () => store.set('prefs', state.prefs);
+
+// App settings (what the Settings page controls) vs. UI state (volume, shuffle, open panels...).
+// UI state always saves. Settings save on every change while Autosave is on; with it off they
+// still apply live (so you can preview them) but are only written when you press Save.
+const SETTING_KEYS = ['stream', 'exclusive', 'theme', 'themeColor', 'accent', 'glass', 'glassTransparency'];
+const pickSettings = (o) => Object.fromEntries(SETTING_KEYS.map((k) => [k, o[k]]));
+let committed = pickSettings(state.prefs);   // the settings as saved on disk
+let pendingMain = {};                         // unsaved main-process settings (download folder, concurrency)
+const autosaveOn = () => state.prefs.autosave !== false;
+const sameSettings = (a, b) => SETTING_KEYS.every((k) => (a[k] ?? null) === (b[k] ?? null));
+const settingsDirty = () => !sameSettings(state.prefs, committed) || Object.keys(pendingMain).length > 0;
+function savePrefs() {
+  if (autosaveOn()) {
+    const changed = !sameSettings(state.prefs, committed);
+    committed = pickSettings(state.prefs);
+    store.set('prefs', state.prefs);
+    if (changed) flashSaved();
+  } else {
+    store.set('prefs', { ...state.prefs, ...committed });
+    updateSaveBar();
+    // Changed from the Options menu or a player button: say once that it isn't saved yet.
+    if (settingsDirty() && !dirtyNoticeShown && nav.stack[nav.idx]?.name !== 'settings') {
+      dirtyNoticeShown = true;
+      toast('Autosave is off: save this change in Settings to keep it.');
+    }
+  }
+  if (!settingsDirty()) dirtyNoticeShown = false;
+}
+let dirtyNoticeShown = false;
+// Download folder / simultaneous downloads live in main's settings.json.
+async function setMainSetting(patch) {
+  if (autosaveOn()) { state.settings = await api.setSettings(patch); flashSaved(); }
+  else { Object.assign(pendingMain, patch); updateSaveBar(); }
+}
+const shownSettings = () => ({ ...state.settings, ...pendingMain });
+async function saveSettingsNow() {
+  committed = pickSettings(state.prefs);
+  store.set('prefs', state.prefs);
+  if (Object.keys(pendingMain).length) { state.settings = await api.setSettings(pendingMain); pendingMain = {}; }
+  flashSaved();
+  refreshSettings();
+}
+function discardSettings() {
+  const wasExclusive = !!state.prefs.exclusive;
+  Object.assign(state.prefs, committed);
+  pendingMain = {};
+  applyTheme();
+  if (!!committed.exclusive !== wasExclusive) setExclusive(!!committed.exclusive);
+  updateSaveBar();
+  refreshSettings();
+  toast('Changes discarded');
+}
+// "Saved" note next to the Settings title (autosave), or the unsaved-changes bar (manual).
+let savedAt = 0, savedTimer = 0;
+const SAVED_FLASH_MS = 1600;
+const saveStateHtml = () => (Date.now() - savedAt < SAVED_FLASH_MS ? `${icSpan('check')}Saved` : `${icSpan('check')}All changes saved`);
+function flashSaved() {
+  savedAt = Date.now();
+  // Settings may redraw right after this (same tick), so update on the next frame too.
+  const paint = () => {
+    const el = document.getElementById('saveState');
+    if (!el) return;
+    el.classList.toggle('flash', Date.now() - savedAt < SAVED_FLASH_MS);
+    el.innerHTML = saveStateHtml();
+  };
+  paint(); requestAnimationFrame(paint);
+  clearTimeout(savedTimer);
+  savedTimer = setTimeout(paint, SAVED_FLASH_MS + 20);
+}
+function updateSaveBar() {
+  const bar = document.getElementById('saveBar');
+  if (bar) bar.classList.toggle('show', !autosaveOn() && settingsDirty());
+}
 const slimTrack = (t) => ({ id: t.id, songPath: t.songPath, name: t.name, duration: t.duration, durSec: t.durSec, num: t.num, cd: t.cd, sizes: t.sizes, albumPath: t.albumPath, albumTitle: t.albumTitle, cover: t.cover });
 const slimAlbum = (a) => ({ path: a.path, title: a.title, thumb: a.thumb || a.cover || '', year: a.year || a.meta?.Year || '', type: a.type || a.meta?.['Album type'] || '' });
 
@@ -157,9 +230,14 @@ function go(route, { replace = false } = {}) {
 function back() { if (nav.idx > 0) { nav.stack[nav.idx].scroll = view.scrollTop; nav.idx--; render(true); } }
 function forward() { if (nav.idx < nav.stack.length - 1) { nav.stack[nav.idx].scroll = view.scrollTop; nav.idx++; render(true); } }
 
+let lastRouteName = '';
 async function render(restore = false) {
   const route = nav.stack[nav.idx];
   const tk = ++renderToken;
+  if (lastRouteName === 'settings' && route.name !== 'settings' && !autosaveOn() && settingsDirty()) {
+    toast('Your settings changes aren’t saved yet. Open Settings to save or discard them.');
+  }
+  lastRouteName = route.name;
   clearInterval(heroTimer);
   $('#navBack').disabled = nav.idx <= 0;
   $('#navFwd').disabled = nav.idx >= nav.stack.length - 1;
@@ -474,7 +552,7 @@ const VIEWS = {
   async downloads() { setView(downloadsHtml()); },
 
   async settings() {
-    const s = state.settings;
+    const s = shownSettings();
     const p = state.prefs;
     const theme = p.theme || 'dark';
     const seg = (act, cur, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
@@ -483,7 +561,11 @@ const VIEWS = {
       ${list.map((c) => `<button class="swatch ${cur?.toLowerCase() === c ? 'on' : ''}" style="--sw:${c}" data-act="appearance" data-k="${key}" data-v="${c}" title="${c}"></button>`).join('')}
       <label class="swatch picker ${isHex(cur) && !list.includes(cur.toLowerCase()) ? 'on' : ''}" title="Pick any colour" ${isHex(cur) && !list.includes(cur.toLowerCase()) ? `style="--sw:${cur}"` : ''}><input type="color" data-appearance="${key}" value="${isHex(cur) ? cur : list[0]}"></label></div>`;
     const transparency = p.glassTransparency ?? 40;
-    setView(`<div class="page settings"><h1 class="page-title">Settings</h1>
+    const auto = autosaveOn();
+    setView(`<div class="page settings"><div class="settings-head"><h1 class="page-title">Settings</h1>
+        ${auto ? `<span class="save-state ${Date.now() - savedAt < SAVED_FLASH_MS ? 'flash' : ''}" id="saveState" title="Changes are saved as soon as you make them">${saveStateHtml()}</span>` : ''}</div>
+      <div class="setting"><div><div class="s-title">Autosave</div><div class="s-desc">${auto ? 'Every change is saved as soon as you make it.' : 'Changes apply right away so you can try them, but are kept only when you press Save.'}</div></div>
+        ${seg('autosave', auto ? '1' : '0', [['0', 'Off'], ['1', 'On']])}</div>
       <h2 class="settings-group">Appearance</h2>
       <div class="setting"><div><div class="s-title">Display mode</div><div class="s-desc">System follows Windows' light or dark mode. Custom builds the whole theme from one colour.</div></div>
         ${seg('theme', theme, [['dark', 'Dark'], ['light', 'Light'], ['system', 'System'], ['custom', 'Custom']])}</div>
@@ -513,7 +595,12 @@ const VIEWS = {
         <button class="pill-btn" data-act="open-site" data-url="${SITE}/">${icSpan('external')}KHInsider</button></div>
       <div class="setting"><div class="s-desc"><b style="color:var(--text);font-weight:500">Shortcuts</b> · Space play/pause · Ctrl+←/→ previous/next · Ctrl+↑/↓ volume · Ctrl+K search · Ctrl+B sidebar · N Now Playing · L lyrics · F11 full screen · Alt+← back</div></div>
     </div>`);
-    $('#concSel').addEventListener('change', async (e) => { state.settings = await api.setSettings({ concurrency: +e.target.value }); toast('Saved'); });
+    // Unsaved-changes bar (Autosave off). Lives outside the scrolling page so it stays put.
+    view.insertAdjacentHTML('beforeend', `<div class="save-bar" id="saveBar"><span>${icSpan('warning')}You have unsaved changes</span>
+      <span style="flex:1"></span><button class="pill-btn" data-act="settings-discard">Discard</button><button class="pill-btn primary" data-act="settings-save">Save changes</button></div>`);
+    hydrateIcons($('#saveBar'));
+    updateSaveBar();
+    $('#concSel').addEventListener('change', (e) => setMainSetting({ concurrency: +e.target.value }));
   },
 };
 
@@ -567,8 +654,19 @@ function historyGrid(items) {
 // Recent searches, shown on the Search page before you type.
 function searchHistoryHtml() {
   if (!state.searches.length) return '';
-  return `<section class="section"><div class="section-head"><h2 class="section-title">Recent searches</h2><a class="see-all" data-act="searches-clear">Clear all</a></div>
-    <div class="chips-row">${state.searches.map((s, i) => `<span class="chip search-chip" data-act="search-again" data-q="${esc(s.q)}" title="Search “${esc(s.q)}”">${icSpan('clock')}<span>${esc(s.q)}</span><button class="sc-x" data-act="search-forget" data-i="${i}" title="Remove">${ic('close')}</button></span>`).join('')}</div></section>`;
+  const tile = (s) => {
+    const x = `<button class="rs-x" data-act="search-forget" data-key="${esc(searchKey(s))}" title="Remove from recent searches">${ic('close')}</button>`;
+    if (s.kind === 'album') {
+      const sub = ['Album', s.type, s.year].filter(Boolean).join(' · ');
+      return `<div class="rs-item" data-act="album" data-path="${esc(s.path)}" title="${esc(s.title)}">
+        <img loading="lazy" src="${imgSrc(s.thumb, 256)}" alt=""><div class="rs-text"><div class="rs-name">${esc(s.title)}</div><div class="rs-sub">${esc(sub)}</div></div>${x}</div>`;
+    }
+    return `<div class="rs-item" data-act="search-again" data-q="${esc(s.q)}" title="Search “${esc(s.q)}”">
+      <div class="rs-icon">${ic('search')}</div><div class="rs-text"><div class="rs-name">${esc(s.q)}</div><div class="rs-sub">Search</div></div>${x}</div>`;
+  };
+  return `<section class="section"><div class="section-head"><h2 class="section-title">Recent searches</h2>
+    <button class="pill-btn" data-act="searches-clear">${icSpan('trash')}Clear recent searches</button></div>
+    <div class="rs-grid">${state.searches.map(tile).join('')}</div></section>`;
 }
 
 // ------------------------------------------------------------------ sidebar
@@ -1191,13 +1289,37 @@ function pushHistory(t) {
 // saved a few seconds ago replaces it: typing "zelda" saves "zelda", not "z", "ze", "zel"...
 function pushSearch(q) {
   const k = q.toLowerCase();
-  const [last, ...rest] = state.searches;
+  const isQ = (s) => s.kind === 'query';
+  const last = state.searches.find(isQ);
   const lk = last?.q.toLowerCase();
   const typing = last && Date.now() - last.at < 15000 && (k.startsWith(lk) || lk.startsWith(k));
-  const older = (typing ? rest : state.searches).filter((s) => s.q.toLowerCase() !== k);
-  state.searches = [{ q, at: Date.now() }, ...older].slice(0, 20);
+  const older = state.searches.filter((s) => !(isQ(s) && (s === (typing ? last : null) || s.q.toLowerCase() === k)));
+  state.searches = [{ kind: 'query', q, at: Date.now() }, ...older].slice(0, 24);
   store.set('searches', state.searches);
 }
+// An album you opened or played from search results joins your recent searches (like Spotify).
+function pushSearchAlbum(a) {
+  if (!a?.path) return;
+  const entry = { kind: 'album', ...slimAlbum(a), platforms: a.platforms || '', at: Date.now() };
+  state.searches = [entry, ...state.searches.filter((s) => !(s.kind === 'album' && s.path === a.path))].slice(0, 24);
+  store.set('searches', state.searches);
+}
+function rememberFromSearch(path) {
+  const r = nav.stack[nav.idx];
+  if (r?.name !== 'search') return;
+  if (r.q) pushSearchAlbum(view._results?.find((a) => a.path === path));
+  else pushSearchAlbum(state.searches.find((s) => s.kind === 'album' && s.path === path));   // re-opened from the recent list
+}
+// Redraw the Search start page in place (after removing a recent search).
+function refreshSearchHome() {
+  const r = nav.stack[nav.idx];
+  if (r?.name !== 'search' || (r.q || '').trim()) return;
+  const top = view.scrollTop;
+  setView.quiet = true;
+  try { VIEWS.search(r, renderToken); } finally { setView.quiet = false; }
+  view.scrollTop = top;
+}
+const searchKey = (s) => (s.kind === 'album' ? 'a:' + s.path : 'q:' + s.q.toLowerCase());
 function timeAgo(ts) {
   const s = (Date.now() - ts) / 1000;
   if (s < 60) return 'Just now';
@@ -1379,8 +1501,12 @@ document.addEventListener('click', async (e) => {
       else go({ name: v });
       break;
     }
-    case 'album': if (curRoute?.name === 'album' && curRoute.path === el.dataset.path && np.hidden) break; go({ name: 'album', path: el.dataset.path }); break;
-    case 'play-album': e.stopPropagation(); playAlbum(el.dataset.path); break;
+    case 'album':
+      if (curRoute?.name === 'album' && curRoute.path === el.dataset.path && np.hidden) break;
+      rememberFromSearch(el.dataset.path);
+      go({ name: 'album', path: el.dataset.path });
+      break;
+    case 'play-album': e.stopPropagation(); rememberFromSearch(el.dataset.path); playAlbum(el.dataset.path); break;
     case 'list': go({ name: 'list', path: el.dataset.path, title: el.dataset.title, page: 1 }); break;
     case 'collection': {
       if (el.dataset.key === 'recent') go({ name: 'collection', key: 'recent', title: 'Recently Played' });
@@ -1427,7 +1553,21 @@ document.addEventListener('click', async (e) => {
     }
     case 'dl-clear': for (const [id, d] of DL) if (!['queued', 'resolving', 'downloading'].includes(d.state)) DL.delete(id); persistDownloads(); render(); break;
     case 'dl-open-folder': api.reveal(); break;
-    case 'choose-dir': state.settings = await api.chooseDownloadDir(); render(); break;
+    case 'choose-dir': {
+      const dir = await api.chooseDownloadDir(shownSettings().downloadDir);
+      if (dir) { await setMainSetting({ downloadDir: dir }); refreshSettings(); }
+      break;
+    }
+    case 'autosave': {
+      const on = el.dataset.v === '1';
+      state.prefs.autosave = on;
+      if (on && settingsDirty()) await saveSettingsNow();   // turning it on keeps what you've changed
+      else { savePrefs(); refreshSettings(); }
+      if (on) toast('Autosave on: changes save automatically');
+      break;
+    }
+    case 'settings-save': await saveSettingsNow(); toast('Settings saved'); break;
+    case 'settings-discard': discardSettings(); break;
     case 'pref': state.prefs[el.dataset.k] = el.dataset.v; savePrefs(); refreshSettings(); toast(el.dataset.v === 'FLAC' ? 'Lossless streaming on — applies from the next song' : 'Streaming MP3'); break;
     case 'exclusive': setExclusive(el.dataset.v === '1'); refreshSettings(); break;
     case 'theme': {
@@ -1441,8 +1581,19 @@ document.addEventListener('click', async (e) => {
     case 'history-clear': state.history = []; store.set('history', []); render(); toast('Listen history cleared'); break;
     case 'hist-play': if (!e.target.closest('a')) playList(state.history, +el.dataset.i, 'history'); break;
     case 'search-again': go({ name: 'search', q: el.dataset.q }, { replace: curRoute?.name === 'search' }); break;
-    case 'search-forget': e.stopPropagation(); state.searches.splice(+el.dataset.i, 1); store.set('searches', state.searches); render(); break;
-    case 'searches-clear': state.searches = []; store.set('searches', []); render(); break;
+    case 'search-forget': {
+      e.stopPropagation();
+      state.searches = state.searches.filter((s) => searchKey(s) !== el.dataset.key);
+      store.set('searches', state.searches);
+      const item = el.closest('.rs-item');
+      if (item) { item.classList.add('removing'); setTimeout(() => (curRoute?.name === 'search' ? refreshSearchHome() : null), 160); }
+      break;
+    }
+    case 'searches-clear':
+      state.searches = []; store.set('searches', []);
+      if (curRoute?.name === 'settings') refreshSettings(); else refreshSearchHome();
+      toast('Recent searches cleared');
+      break;
     case 'clear-lyrics': LYR.choices = {}; store.set('lyricsChoice', {}); LYR.cache.clear(); render(); break;
     case 'open-site': api.openExternal(el.dataset.url); break;
     case 'support': api.openExternal(SUPPORT_URL); break;

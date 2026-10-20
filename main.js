@@ -221,13 +221,16 @@ function registerIpc() {
   });
 
   ipcMain.handle('settings:get', () => settings);
-  ipcMain.handle('settings:chooseDir', async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.downloadDir });
-    if (!r.canceled && r.filePaths[0]) { settings.downloadDir = r.filePaths[0]; saveSettings(); }
-    return settings;
+  // Only picks a folder; the renderer saves it with settings:set (now, or on Save when Autosave is off).
+  ipcMain.handle('settings:chooseDir', async (_e, current) => {
+    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: typeof current === 'string' && current ? current : settings.downloadDir });
+    return !r.canceled && r.filePaths[0] ? r.filePaths[0] : null;
   });
   ipcMain.handle('settings:set', (_e, patch) => {
     if (patch && typeof patch.concurrency === 'number') settings.concurrency = Math.min(6, Math.max(1, patch.concurrency | 0));
+    if (patch && typeof patch.downloadDir === 'string' && path.isAbsolute(patch.downloadDir)) {
+      try { fs.mkdirSync(patch.downloadDir, { recursive: true }); settings.downloadDir = patch.downloadDir; } catch {}
+    }
     saveSettings();
     return settings;
   });
