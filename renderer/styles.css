@@ -476,6 +476,10 @@ div.head-art { cursor: default; }
 .quality-badge { height: 20px; display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; letter-spacing: .06em; padding: 0 6px; border-radius: 4px; border: 1px solid var(--surface-3); color: var(--sub); margin-right: 6px; }
 .quality-badge:empty { display: none; }
 .quality-badge.lossless { border-color: rgba(231,196,106,.5); color: var(--lossless); }
+.quality-badge.exclusive { border-color: rgba(231,196,106,.6); color: #1a1407; background: var(--lossless); text-transform: uppercase; cursor: help; }
+.slider.disabled { opacity: .35; pointer-events: none; }
+#btnExclusive.on { color: var(--lossless); }
+#btnExclusive.on::after { background: var(--lossless); }
 
 /* ------------------------------------------------------------------ Now Playing */
 .np {

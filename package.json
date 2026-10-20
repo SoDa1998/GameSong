@@ -1,14 +1,15 @@
 {
   "name": "gamesong",
   "productName": "GameSong",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "A simple, modern streaming and download client for the KHInsider video game music archive.",
   "author": "GameSong",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "assets": "node tools/build-assets.mjs",
-    "dist": "node tools/build-assets.mjs && electron-builder --win nsis portable --x64"
+    "native": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-exclusive.ps1",
+    "dist": "node tools/build-assets.mjs && npm run native && electron-builder --win nsis portable --x64"
   },
   "license": "MIT",
   "devDependencies": {
@@ -32,6 +33,9 @@
       "renderer/**/*",
       "build/icon.png",
       "package.json"
+    ],
+    "extraResources": [
+      { "from": "native/bin/gs-exclusive.exe", "to": "gs-exclusive.exe" }
     ],
     "win": {
       "target": ["nsis", "portable"],

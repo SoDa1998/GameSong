@@ -6,6 +6,7 @@ const { app, BrowserWindow, ipcMain, net, dialog, shell, protocol, nativeImage }
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { spawn } = require('child_process');
 
 // gscover://img/<px>/<encoded full-size URL> serves resized, cached album art (see serveCover).
 protocol.registerSchemesAsPrivileged([{ scheme: 'gscover', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
@@ -237,6 +238,9 @@ function registerIpc() {
 
   ipcMain.handle('lyrics:search', async (_e, params) => searchLyrics(params));
 
+  ipcMain.handle('excl:available', () => exclusiveAvailable());
+  ipcMain.on('excl:cmd', (_e, cmd) => exclusiveCommand(cmd));
+
   ipcMain.handle('win:fullscreen', (_e, on) => {
     if (!win) return false;
     win.setFullScreen(typeof on === 'boolean' ? on : !win.isFullScreen());
@@ -296,6 +300,64 @@ function pruneCovers() {
     const stats = await Promise.all(names.map(async (n) => ({ n, t: (await fs.promises.stat(path.join(coverDir(), n))).mtimeMs })));
     stats.sort((a, b) => a.t - b.t).slice(0, names.length - 3000).forEach(({ n }) => fs.promises.unlink(path.join(coverDir(), n)).catch(() => {}));
   }).catch(() => {});
+}
+
+// ---------------------------------------------------------------- exclusive mode
+// Chromium's audio always goes through the Windows mixer, so bit-perfect FLAC playback uses a
+// small native helper (native/exclusive → gs-exclusive.exe) that opens the device in WASAPI
+// exclusive mode. It speaks JSON lines on stdin/stdout; events are forwarded to the renderer.
+const exclusiveExe = () => app.isPackaged
+  ? path.join(process.resourcesPath, 'gs-exclusive.exe')
+  : path.join(__dirname, 'native', 'bin', 'gs-exclusive.exe');
+const exclusiveAvailable = () => process.platform === 'win32' && fs.existsSync(exclusiveExe());
+let exclusiveProc = null;
+
+// The helper can outlive the window during quit, so only message a window that still exists.
+function toRenderer(ev) {
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send('excl:event', ev);
+}
+
+function ensureExclusive() {
+  if (exclusiveProc && exclusiveProc.exitCode === null) return exclusiveProc;
+  const proc = spawn(exclusiveExe(), [], { stdio: ['pipe', 'pipe', 'ignore'], windowsHide: true });
+  let buf = '';
+  proc.stdout.setEncoding('utf8');
+  proc.stdout.on('data', (d) => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line) continue;
+      try { toRenderer(JSON.parse(line)); } catch {}
+    }
+  });
+  proc.on('exit', (code) => {
+    if (exclusiveProc === proc) exclusiveProc = null;
+    toRenderer({ event: 'exit', code });
+  });
+  proc.stdin.on('error', () => {});
+  exclusiveProc = proc;
+  return proc;
+}
+
+function exclusiveCommand(cmd) {
+  if (!exclusiveAvailable() || !cmd || typeof cmd.cmd !== 'string') return;
+  if (cmd.cmd === 'load') {
+    let u;
+    try { u = new URL(cmd.url); } catch { return; }
+    if (u.protocol !== 'https:' || !ALLOWED_MEDIA_HOST.test(u.hostname)) return;
+  }
+  // Releasing the device doesn't need a process that isn't running.
+  if ((cmd.cmd === 'stop' || cmd.cmd === 'quit') && !exclusiveProc) return;
+  ensureExclusive().stdin.write(JSON.stringify(cmd) + '\n');
+}
+
+function shutdownExclusive() {
+  const p = exclusiveProc;
+  if (!p) return;
+  try { p.stdin.write('{"cmd":"quit"}\n'); } catch {}
+  setTimeout(() => { try { p.kill(); } catch {} }, 800);
 }
 
 // ---------------------------------------------------------------- lyrics
@@ -380,3 +442,4 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('will-quit', shutdownExclusive);

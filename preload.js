@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('khi', {
   chooseDownloadDir: () => ipcRenderer.invoke('settings:chooseDir'),
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
   searchLyrics: (params) => ipcRenderer.invoke('lyrics:search', params),
+  exclusive: {
+    available: () => ipcRenderer.invoke('excl:available'),
+    send: (cmd) => ipcRenderer.send('excl:cmd', cmd),
+    onEvent: (cb) => ipcRenderer.on('excl:event', (_e, ev) => cb(ev)),
+  },
   setFullscreen: (on) => ipcRenderer.invoke('win:fullscreen', on),
   onFullscreen: (cb) => ipcRenderer.on('win:fs', (_e, on) => cb(on)),
   platform: process.platform,

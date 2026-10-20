@@ -1,5 +1,6 @@
 import { parseHome, parseList, parseAlbum } from './scraper.js';
 import { ICONS } from './icons.js';
+import { PlaybackEngine } from './engine.js';
 
 const api = window.khi;
 const SITE = 'https://downloads.khinsider.com';
@@ -454,6 +455,8 @@ const VIEWS = {
     setView(`<div class="page settings"><h1 class="page-title">Settings</h1>
       <div class="setting"><div><div class="s-title">Streaming quality</div><div class="s-desc">Lossless uses FLAC when an album offers it, and falls back to MP3.</div></div>
         <div class="seg"><button class="${p.stream === 'MP3' ? 'on' : ''}" data-act="pref" data-k="stream" data-v="MP3">Normal · MP3</button><button class="${p.stream === 'FLAC' ? 'on' : ''}" data-act="pref" data-k="stream" data-v="FLAC">Lossless · FLAC</button></div></div>
+      ${exclusiveAvailable ? `<div class="setting"><div><div class="s-title">Exclusive mode (bit-perfect)</div><div class="s-desc">Streams the FLAC version straight to your audio device in WASAPI exclusive mode, skipping the Windows mixer: no resampling, mixing or volume processing. While it's on, other apps can't play sound on that device, and the volume slider controls the device itself. Albums without FLAC play normally.</div></div>
+        <div class="seg"><button class="${!p.exclusive ? 'on' : ''}" data-act="exclusive" data-v="0">Off</button><button class="${p.exclusive ? 'on' : ''}" data-act="exclusive" data-v="1">On</button></div></div>` : ''}
       <div class="setting"><div style="min-width:0"><div class="s-title">Download location</div><div class="s-desc" style="word-break:break-all">${esc(s.downloadDir)}</div></div>
         <div style="display:flex;gap:8px;flex:none"><button class="pill-btn" data-act="dl-open-folder">${icSpan('folder')}Open</button><button class="pill-btn primary" data-act="choose-dir">Change</button></div></div>
       <div class="setting"><div><div class="s-title">Simultaneous downloads</div><div class="s-desc">How many files download at the same time.</div></div>
@@ -521,8 +524,10 @@ function renderLibrary() {
 }
 
 // ------------------------------------------------------------------ player
-const audio = new Audio();
-audio.preload = 'auto';
+// Normal mode plays through the browser's <audio>; Exclusive mode (Windows) streams the FLAC
+// through the native WASAPI exclusive player. See engine.js.
+const audio = new PlaybackEngine(api.exclusive);
+let exclusiveAvailable = false;   // set at boot: Windows + gs-exclusive.exe present
 const P = { queue: [], idx: -1, unshuffled: null, context: null, current: null, format: '', tok: 0, loading: false, resumeAt: 0 };
 
 function shuffleArr(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
@@ -556,12 +561,29 @@ async function loadAndPlay(autoplay = true, startAt = 0) {
   try {
     const { links } = await api.resolveSong(t.songPath);
     if (tok !== P.tok) return;
-    const link = pickStream(links);
-    P.format = link.format;
-    audio.src = link.url;
-    if (startAt) audio.currentTime = startAt;
+    const flac = links.find((l) => l.format === 'FLAC');
+    let exclusive = false;
+    if (exclusiveWanted() && flac) {
+      try {
+        await audio.loadExclusive(flac.url, startAt, autoplay);
+        if (tok !== P.tok) return;
+        exclusive = true;
+        P.format = 'FLAC';
+      } catch (e) {
+        if (tok !== P.tok || e.code === 'superseded') return;
+        explainExclusiveFailure(e);
+      }
+    } else if (exclusiveWanted() && !flac) {
+      noteOnce(`noflac:${t.albumPath}`, 'No FLAC for this album, so Exclusive mode is skipped and it plays normally.');
+    }
+    if (!exclusive) {
+      const link = pickStream(links);
+      P.format = link.format;
+      audio.loadHtml(link.url, startAt);
+    }
+    applyVolume();
     updateNowPlaying();
-    if (autoplay) await audio.play();
+    if (autoplay && !exclusive) await audio.play();
     pushRecent({ path: t.albumPath, title: t.albumTitle, thumb: t.cover });
     persistSession(true);
     const nxt = P.queue[P.idx + 1];
@@ -574,6 +596,65 @@ async function loadAndPlay(autoplay = true, startAt = 0) {
   } finally {
     if (tok === P.tok) setLoading(false);
   }
+}
+
+// ------------------------------------------------------------------ exclusive mode
+const exclusiveWanted = () => exclusiveAvailable && !!state.prefs.exclusive;
+const noted = new Set();
+function noteOnce(key, msg) { if (!noted.has(key)) { noted.add(key); toast(msg); } }
+
+function explainExclusiveFailure(e) {
+  const why = {
+    notallowed: 'Windows has exclusive access turned off for this device (Sound settings › device › Properties › Advanced).',
+    busy: 'another app is using the device exclusively.',
+    unsupported: "the device can't play this file's format bit-perfectly.",
+    network: "the FLAC couldn't be downloaded.",
+    decode: "the FLAC couldn't be decoded.",
+  }[e.code] || e.message;
+  toast(`Exclusive mode unavailable: ${why} Playing normally instead.`, 'err');
+}
+
+/** Turns Exclusive mode on/off; the current track switches over at the same position. */
+function setExclusive(on) {
+  state.prefs.exclusive = !!on;
+  savePrefs();
+  deviceVolume = null;
+  updateExclusiveUI();
+  if (!P.current || !audio.src) { if (!on) audio.releaseExclusive(); return; }
+  const at = audio.currentTime || 0;
+  const wasPlaying = !audio.paused;
+  if (!on) audio.releaseExclusive();
+  loadAndPlay(wasPlaying, at);
+  toast(on ? 'Exclusive mode on: FLAC plays bit-perfect, straight to your device.' : 'Exclusive mode off: the device is shared again.');
+}
+
+function updateExclusiveUI() {
+  const b = $('#btnExclusive');
+  b.hidden = !exclusiveAvailable;
+  b.classList.toggle('on', exclusiveWanted());
+  b.title = exclusiveWanted() ? 'Exclusive mode on (bit-perfect FLAC) - click to turn off' : 'Exclusive mode: play FLAC bit-perfect, straight to your device';
+}
+
+// Mid-playback failure (device unplugged, driver reset...): carry on in normal mode.
+audio.addEventListener('exclusiveerror', (e) => {
+  if (!P.current) return;
+  toast(`Exclusive playback stopped: ${e.detail.message} Playing normally instead.`, 'err');
+  const at = audio.currentTime || 0;
+  audio.releaseExclusive();
+  deviceVolume = null;
+  loadAndPlayNormal(at);
+});
+async function loadAndPlayNormal(at) {
+  const t = P.current;
+  try {
+    const { links } = await api.resolveSong(t.songPath);
+    const link = pickStream(links);
+    P.format = link.format;
+    audio.loadHtml(link.url, at);
+    applyVolume();
+    updateNowPlaying();
+    await audio.play();
+  } catch { toast(`Couldn't play “${t.name}”`, 'err'); }
 }
 
 function togglePlay() {
@@ -641,7 +722,15 @@ function updateNowPlaying() {
   $('#miniArt').style.visibility = t ? 'visible' : 'hidden';
   const liked = t && likedSet.has(t.id);
   $$('.js-like').forEach((b) => { b.classList.toggle('liked', !!liked); b.style.visibility = t ? 'visible' : 'hidden'; b.title = liked ? 'Remove from Liked Songs' : 'Save to Liked Songs'; });
-  $$('.js-quality').forEach((q) => { q.textContent = t && audio.src ? P.format : ''; q.classList.toggle('lossless', LOSSLESS.has(P.format)); });
+  const exInfo = audio.mode === 'exclusive' ? audio.info : null;
+  $$('.js-quality').forEach((q) => {
+    q.textContent = !t || !audio.src ? '' : exInfo ? 'Exclusive' : P.format;
+    q.classList.toggle('lossless', LOSSLESS.has(P.format) && !exInfo);
+    q.classList.toggle('exclusive', !!exInfo);
+    q.title = exInfo
+      ? `Bit-perfect: ${exInfo.source} → ${exInfo.device} (${exInfo.format}, WASAPI exclusive mode)`
+      : t && audio.src ? `Streaming ${P.format} through the Windows mixer` : '';
+  });
   document.title = t ? `${t.name} · GameSong` : 'GameSong';
   if ('mediaSession' in navigator && t) {
     navigator.mediaSession.metadata = new MediaMetadata({ title: t.name, artist: t.albumTitle, album: t.albumTitle, artwork: t.cover ? [{ src: fullCover(t.cover), sizes: '1000x1000' }] : [] });
@@ -715,15 +804,30 @@ $$('.js-seek').forEach((el) => makeSlider(el, {
   onInput: (f) => { seeking = true; paintProgress(f); setText('.js-cur', fmtTime(f * (audio.duration || P.current?.durSec || 0))); },
   onCommit: (f) => { seeking = false; if (audio.duration) audio.currentTime = f * audio.duration; },
 }));
+// In Exclusive mode Windows applies no software volume to the stream, so the slider drives the
+// device's own volume instead (on a DAC with hardware volume this keeps playback bit-perfect).
+let deviceVolume = null;
+const currentVolume = () => (audio.mode === 'exclusive' ? (deviceVolume ?? 1) : state.prefs.volume);
+
 function setVolume(v, persist = true) {
   v = Math.min(1, Math.max(0, v));
-  state.prefs.volume = v; if (v > 0) state.prefs.muted = false;
-  applyVolume(); if (persist) savePrefs();
+  if (v > 0) state.prefs.muted = false;
+  if (audio.mode === 'exclusive') deviceVolume = v;
+  else { state.prefs.volume = v; if (persist) savePrefs(); }
+  applyVolume();
 }
 function applyVolume() {
-  const v = state.prefs.muted ? 0 : state.prefs.volume;
-  audio.volume = v * v; // perceptual curve
-  $$('.js-vol').forEach((s) => { s.querySelector('.slider-fill').style.width = v * 100 + '%'; s.querySelector('.slider-thumb').style.left = v * 100 + '%'; });
+  const exclusive = audio.mode === 'exclusive';
+  if (exclusive && deviceVolume == null) deviceVolume = audio.info?.volume ?? 1;
+  const v = state.prefs.muted ? 0 : currentVolume();
+  audio.setVolume(v);
+  const usable = !exclusive || audio.info?.hardwareVolume !== false;
+  $$('.js-vol').forEach((s) => {
+    s.querySelector('.slider-fill').style.width = v * 100 + '%';
+    s.querySelector('.slider-thumb').style.left = v * 100 + '%';
+    s.classList.toggle('disabled', !usable);
+    s.title = !exclusive ? '' : usable ? `Device volume (${audio.info?.device || 'audio device'})` : "This device has no hardware volume: use its own volume control (Exclusive mode keeps the signal untouched)";
+  });
   $$('.js-mute').forEach((b) => setIcon(b, v === 0 ? 'volumeOff' : v < 0.5 ? 'volumeLow' : 'volume'));
 }
 $$('.js-vol').forEach((el) => makeSlider(el, { onInput: (f) => setVolume(f, false), onCommit: (f) => setVolume(f) }));
@@ -1205,6 +1309,7 @@ document.addEventListener('click', async (e) => {
     case 'dl-open-folder': api.reveal(); break;
     case 'choose-dir': state.settings = await api.chooseDownloadDir(); render(); break;
     case 'pref': state.prefs[el.dataset.k] = el.dataset.v; savePrefs(); render(); toast(el.dataset.v === 'FLAC' ? 'Lossless streaming on — applies from the next song' : 'Streaming MP3'); break;
+    case 'exclusive': setExclusive(el.dataset.v === '1'); render(); break;
     case 'clear-recent': state.recent = []; store.set('recent', []); render(); break;
     case 'clear-lyrics': LYR.choices = {}; store.set('lyricsChoice', {}); LYR.cache.clear(); render(); break;
     case 'open-site': api.openExternal(el.dataset.url); break;
@@ -1289,7 +1394,12 @@ $$('.js-prev').forEach((b) => b.addEventListener('click', prev));
 $$('.js-shuffle').forEach((b) => b.addEventListener('click', toggleShuffle));
 $$('.js-repeat').forEach((b) => b.addEventListener('click', cycleRepeat));
 $$('.js-like').forEach((b) => b.addEventListener('click', () => P.current && toggleLike(P.current)));
-$$('.js-mute').forEach((b) => b.addEventListener('click', () => { state.prefs.muted = !state.prefs.muted; if (!state.prefs.muted && state.prefs.volume === 0) state.prefs.volume = 0.5; applyVolume(); savePrefs(); }));
+$$('.js-mute').forEach((b) => b.addEventListener('click', () => {
+  state.prefs.muted = !state.prefs.muted;
+  if (!state.prefs.muted && currentVolume() === 0) setVolume(0.5);
+  applyVolume(); savePrefs();
+}));
+$('#btnExclusive').addEventListener('click', () => setExclusive(!state.prefs.exclusive));
 $('#btnQueue').addEventListener('click', () => { state.prefs.queueOpen = !state.prefs.queueOpen; savePrefs(); renderQueue(); });
 $('#btnLyrics').addEventListener('click', () => { if (npOpen() && state.prefs.npLyrics) closeNP(); else openNP({ lyrics: true }); });
 $('#btnNowPlaying').addEventListener('click', () => (npOpen() ? closeNP() : openNP()));
@@ -1346,8 +1456,8 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
   else if (mod && e.key === 'ArrowRight') next();
   else if (mod && e.key === 'ArrowLeft') prev();
-  else if (mod && e.key === 'ArrowUp') { e.preventDefault(); setVolume(state.prefs.volume + 0.1); }
-  else if (mod && e.key === 'ArrowDown') { e.preventDefault(); setVolume(state.prefs.volume - 0.1); }
+  else if (mod && e.key === 'ArrowUp') { e.preventDefault(); setVolume(currentVolume() + 0.1); }
+  else if (mod && e.key === 'ArrowDown') { e.preventDefault(); setVolume(currentVolume() - 0.1); }
   else if (!mod && !e.altKey && e.key.toLowerCase() === 'n') { npOpen() ? closeNP() : openNP(); }
   else if (!mod && !e.altKey && e.key.toLowerCase() === 'l') { if (npOpen()) setLyricsMode(!state.prefs.npLyrics); else openNP({ lyrics: true }); }
   else if (e.key === 'Enter') { const r = $('.track.selected'); if (r) playList(viewTracks, +r.dataset.idx, viewContext); }
@@ -1360,6 +1470,8 @@ view.addEventListener('scroll', closeMenu, { passive: true });
   if (api.platform === 'darwin') $('.search-box kbd').textContent = '⌘ K';
   hydrateIcons();
   state.settings = await api.getSettings();
+  exclusiveAvailable = !!(await api.exclusive?.available?.().catch(() => false));
+  updateExclusiveUI();
   applyVolume();
   applySidebar();
   updateModeButtons();

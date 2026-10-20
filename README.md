@@ -44,11 +44,13 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 - **Browse**: by album type, by platform, or A–Z.
 - **Charts**: the site's chart pages, such as the Top 40, Most favorited and the all-time Top 1000.
 - **Your Library**: Liked Songs, saved albums, recently played albums and downloads.
+- **Sidebar**: collapses to an icon-only rail with the button next to the logo or `Ctrl + B`.
 - **Now Playing screen**: opens from the player bar's expand button, the cover art, or the `N` key.
   - Large blurred-art backdrop with full-resolution cover art.
-  - Playback controls centered under the seek bar.
-  - Volume and the lyrics icon in the row below the controls, plus the next three songs in the queue.
+  - Playback controls centered under the seek bar, with the lyrics button in the like / download row.
+  - A scrollable **Playing Queue** with the whole queue: played tracks above, the current one highlighted, upcoming below. Click any row to play it.
   - Full-screen mode (the button, or `F11`). Text and controls scale with the screen.
+- **Exclusive mode** (Windows, bit-perfect FLAC): see below.
 - **Lyrics** (from [LRCLIB](https://lrclib.net), a free, open lyrics database):
   - The album art fades out and the lyrics fade in.
   - Synced lyrics highlight the current line and scroll with the song. Click a line to jump to that point.
@@ -60,6 +62,28 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
   - The Downloads page shows live progress.
   - Files go into a folder per album. The portable exe uses `GameSong Downloads/<Album>/` next to itself; `npm start` uses `Music/GameSong/<Album>/`. You can change the folder in Settings.
 
+## Exclusive mode (bit-perfect FLAC)
+
+Turn it on with the headphones button in the player bar or in **Settings**. While it's on, albums that have FLAC stream the FLAC straight to your audio device in **WASAPI exclusive mode**:
+
+- **Bit-perfect:** the Windows mixer is skipped, so nothing is resampled, mixed or volume-scaled. The device runs at the file's own format (for example 24-bit / 44.1 kHz). 16-bit audio is only zero-padded if the device wants a bigger container, which is lossless.
+- **The gold `EXCLUSIVE` badge** shows it's active. Hover it to see the exact source format, output format and device.
+- **The volume slider** controls the device's own volume, because Windows doesn't apply software volume to an exclusive stream. On a DAC with hardware volume this stays bit-perfect. If the device has no hardware volume, use its own volume control.
+- **Other apps can't play sound** on that device while GameSong holds it. Turning Exclusive mode off, or quitting, releases it.
+
+GameSong plays normally instead, and says why, when:
+- an album has no FLAC;
+- Windows has exclusive access turned off for the device (Sound settings › device › Properties › Advanced);
+- another app is using the device exclusively;
+- the device can't play the file's sample rate.
+
+Exclusive playback uses a small native player, `gs-exclusive.exe` (`native/exclusive`). It's C# built with the compiler that ships with Windows (`npm run native`; `npm run dist` runs it), so there's no SDK or extra download. It:
+- streams the FLAC over HTTP;
+- decodes it with its own FLAC decoder, verified bit-identical to ffmpeg, including after seeking;
+- feeds the device from a real-time audio thread.
+
+The WASAPI device code is adapted from the SoDaPlayer project.
+
 ## Shortcuts
 
 | Key | Action |
@@ -68,6 +92,7 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 | Ctrl + ← / → | Previous / next |
 | Ctrl + ↑ / ↓ | Volume |
 | Ctrl + K or `/` | Search |
+| Ctrl + B | Collapse or expand the sidebar |
 | N | Open or close Now Playing |
 | L | Show or hide lyrics |
 | F11 | Full screen |
@@ -79,6 +104,8 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 - `main.js` (the Electron main process) fetches khinsider pages through Chromium's network stack (`net.fetch`), which Cloudflare accepts. If a page still comes back as a challenge, it loads that page in a hidden browser window instead. This process also finds each song's download links for every format, runs the download queue, and sends lyrics searches to LRCLIB.
 - `renderer/scraper.js` turns the site's HTML into data.
 - `renderer/app.js` contains the UI: router, views, player, Now Playing, lyrics and downloads.
+- `renderer/engine.js` is the playback engine: the browser's `<audio>` normally, or the native exclusive-mode player.
+- `native/exclusive/` is the WASAPI exclusive-mode FLAC player (`gs-exclusive.exe`), started by `main.js` on demand.
 - `tools/build-assets.mjs` (`npm run assets`) copies the bundled **Inter** font and builds `renderer/icons.js` from **Lucide** icons (ISC license). `npm run dist` runs it automatically.
 
 ## Disclaimer

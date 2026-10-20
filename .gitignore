@@ -1,9 +1,10 @@
 # Dependencies
 node_modules/
 
-# Build output (installers, portable exe, unpacked app)
+# Build output (installers, portable exe, unpacked app, native exclusive-mode player)
 dist/
 dist-*/
+native/bin/
 
 # Portable-mode data created next to the exe
 GameSong Data/
