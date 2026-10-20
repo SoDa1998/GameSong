@@ -64,6 +64,8 @@ const state = {
   liked: store.get('liked', []),
   saved: store.get('saved', []),
   recent: store.get('recent', []),
+  history: store.get('history', []),     // songs played, newest first: slimTrack + playedAt
+  searches: store.get('searches', []),   // { q, at }, newest first
   prefs: Object.assign({ stream: 'MP3', volume: 0.8, muted: false, shuffle: false, repeat: 'off', queueOpen: false, npLyrics: false }, store.get('prefs', {})),
   settings: { downloadDir: '', concurrency: 3 },
 };
@@ -311,6 +313,7 @@ const VIEWS = {
       <div class="dots">${slides.map((_, i) => `<button class="dot ${i === 0 ? 'active' : ''}" data-act="hero-dot" data-i="${i}" title="Slide ${i + 1}"></button>`).join('')}</div></div>` : '';
 
     let html = `<div class="page">${hero}`;
+    if (state.history.length) html += `<section class="section">${sectionHead('Listen history', 'data-nav="history"')}${historyGrid(state.history.slice(0, 8))}</section>`;
     if (state.recent.length) html += `<section class="section">${sectionHead('Recently Played', 'data-act="collection" data-key="recent"')}${row(state.recent.slice(0, 12))}</section>`;
     if (fresh.length) html += `<section class="section">${sectionHead('Fresh additions', 'data-act="collection" data-key="fresh"')}${row(fresh)}</section>`;
     if (trending.length) html += `<section class="section">${sectionHead('Trending · Top 40', 'data-act="chart" data-which="top40"')}${row(trending.map((a) => ({ ...a, type: '' })))}</section>`;
@@ -345,7 +348,7 @@ const VIEWS = {
   async search(r, tk) {
     const q = (r.q || '').trim();
     $('#searchInput').value = q;
-    if (!q) { setView(`<div class="page"><h1 class="page-title">Browse all</h1>${browseAll()}</div>`); return; }
+    if (!q) { setView(`<div class="page">${searchHistoryHtml()}<h1 class="page-title">Browse all</h1>${browseAll()}</div>`); return; }
     const atypes = [['', 'All'], ['1', 'Soundtracks'], ['2', 'Gamerips'], ['3', 'Singles'], ['5', 'Arrangements'], ['4', 'Remixes'], ['6', 'Compilations'], ['7', 'Inspired By']];
     const sorts = [['relevance', 'Relevance'], ['popularity', 'Popularity'], ['timestamp', 'Date added'], ['year', 'Year'], ['name', 'Name']];
     const filters = `<div class="chips-row" style="margin-bottom:28px">${atypes.map(([v, l]) => `<button class="chip ${String(r.atype || '') === v ? 'active' : ''}" data-act="search-filter" data-k="atype" data-v="${v}">${l}</button>`).join('')}
@@ -354,6 +357,7 @@ const VIEWS = {
     const params = new URLSearchParams({ search: q, type: 'album', sort: r.sort || 'relevance', album_type: r.atype || '' });
     const res = parseList((await api.getPage('/search?' + params)).html);
     if (!live(tk)) return;
+    pushSearch(q);
     const albums = res.albums;
     let body;
     if (!albums.length) {
@@ -447,6 +451,21 @@ const VIEWS = {
       ${trackTable(state.liked, { formats, showAlbum: true })}`);
   },
 
+  async history() {
+    viewTracks = state.history; viewContext = 'history';
+    const head = `<div class="page-head"><div class="backdrop tint" style="--tint:#283240"></div>
+      <div class="head-art" style="background:linear-gradient(135deg,#3f5468,#262a31)">${ic('clock')}</div>
+      <div class="head-text"><div class="eyebrow">Your activity</div><h1 class="head-title">Listen history</h1><div class="head-meta"><span>${plural(state.history.length, 'song')}</span></div></div></div>`;
+    if (!state.history.length) {
+      setView(`${head}<div class="empty">${icSpan('clock')}<h3>Nothing played yet</h3><p>Songs you listen to show up here.</p><button class="pill-btn primary" data-act="nav" data-view="browse">Browse music</button></div>`);
+      return;
+    }
+    const formats = [...new Set(state.history.flatMap((t) => Object.keys(t.sizes || {})))];
+    setView(`${head}<div class="action-bar"><button class="play-btn" data-act="album-play" title="Play">${ic('play')}</button><button class="icon-btn" data-act="album-shuffle" title="Shuffle play">${ic('shuffle')}</button>
+      <button class="pill-btn" data-act="history-clear">${icSpan('trash')}Clear history</button></div>
+      ${trackTable(state.history, { formats, showAlbum: true, group: (t) => dayLabel(t.playedAt) })}`);
+  },
+
   async downloads() { setView(downloadsHtml()); },
 
   async settings() {
@@ -461,7 +480,8 @@ const VIEWS = {
         <div style="display:flex;gap:8px;flex:none"><button class="pill-btn" data-act="dl-open-folder">${icSpan('folder')}Open</button><button class="pill-btn primary" data-act="choose-dir">Change</button></div></div>
       <div class="setting"><div><div class="s-title">Simultaneous downloads</div><div class="s-desc">How many files download at the same time.</div></div>
         <select class="select" id="concSel">${[1, 2, 3, 4, 5, 6].map((n) => `<option ${s.concurrency === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
-      <div class="setting"><div><div class="s-title">Listening history</div><div class="s-desc">${plural(state.recent.length, 'recently played album')}.</div></div><button class="pill-btn" data-act="clear-recent">Clear</button></div>
+      <div class="setting"><div><div class="s-title">Listening history</div><div class="s-desc">${plural(state.history.length, 'song')} in your listen history, ${plural(state.recent.length, 'recently played album')}.</div></div><button class="pill-btn" data-act="clear-recent">Clear</button></div>
+      <div class="setting"><div><div class="s-title">Search history</div><div class="s-desc">${plural(state.searches.length, 'recent search')}.</div></div><button class="pill-btn" data-act="searches-clear">Clear</button></div>
       <div class="setting"><div><div class="s-title">Saved lyric choices</div><div class="s-desc">Lyrics you picked by hand for ${plural(Object.keys(LYR.choices).length, 'song')}.</div></div><button class="pill-btn" data-act="clear-lyrics">Clear</button></div>
       <div class="setting"><div><div class="s-title">About</div><div class="s-desc">GameSong is an unofficial player for the KHInsider video game music archive. Music is streamed from downloads.khinsider.com; lyrics come from LRCLIB. Icons by Lucide, typeface Inter.</div></div>
         <button class="pill-btn" data-act="open-site" data-url="${SITE}/">${icSpan('external')}KHInsider</button></div>
@@ -488,12 +508,13 @@ function showSlide(i) {
   $$('#hero .dot').forEach((d) => d.classList.toggle('active', +d.dataset.i === i));
 }
 
-function trackTable(tracks, { formats = [], showAlbum = false, discs = false } = {}) {
+function trackTable(tracks, { formats = [], showAlbum = false, discs = false, group = null } = {}) {
   const fmtW = Math.max(120, formats.length * 108);
-  let lastCd = null;
+  let lastCd = null, lastGroup = null;
   const rows = tracks.map((t, i) => {
     let pre = '';
     if (discs && t.cd !== lastCd) { lastCd = t.cd; pre = `<div class="disc-head">${icSpan('disc')}Disc ${esc(t.cd)}</div>`; }
+    if (group) { const g = group(t); if (g !== lastGroup) { lastGroup = g; pre = `<div class="disc-head">${icSpan('clock')}${esc(g)}</div>`; } }
     const liked = likedSet.has(t.id);
     const fm = Object.entries(t.sizes || {}).map(([f, s]) => `<span class="fmt ${LOSSLESS.has(f) ? 'lossless' : ''}" data-act="dl-fmt" data-fmt="${esc(f)}" title="Download ${esc(f)} (${esc(s)})">${esc(f)} <span>${esc(s)}</span></span>`).join('');
     return pre + `<div class="track" data-idx="${i}" data-id="${esc(t.id)}">
@@ -507,6 +528,21 @@ function trackTable(tracks, { formats = [], showAlbum = false, discs = false } =
         <button class="icon-btn" data-act="track-more" title="More options">${ic('more')}</button></div></div>`;
   }).join('');
   return `<div class="tracks" style="--fmt-cols:${fmtW}px"><div class="track-head"><div class="num">#</div><div>Title</div><div class="fmts">Download</div><div class="dur">${icSpan('clock')}</div><div></div></div>${rows}</div>`;
+}
+
+// Compact listen-history tiles for Home: art, song, album and when it was played.
+function historyGrid(items) {
+  return `<div class="hist-grid">${items.map((t, i) => `<div class="hist-item" data-act="hist-play" data-i="${i}" data-id="${esc(t.id)}" title="${esc(t.name)}">
+    <img loading="lazy" src="${imgSrc(t.cover, 256)}" alt="">
+    <div class="hi-text"><div class="hi-name">${esc(t.name)}</div><div class="hi-sub"><a data-act="album" data-path="${esc(t.albumPath)}">${esc(t.albumTitle)}</a></div></div>
+    <span class="hi-when">${esc(timeAgo(t.playedAt))}</span>
+    <span class="hi-play">${ic('play')}</span></div>`).join('')}</div>`;
+}
+// Recent searches, shown on the Search page before you type.
+function searchHistoryHtml() {
+  if (!state.searches.length) return '';
+  return `<section class="section"><div class="section-head"><h2 class="section-title">Recent searches</h2><a class="see-all" data-act="searches-clear">Clear all</a></div>
+    <div class="chips-row">${state.searches.map((s, i) => `<span class="chip search-chip" data-act="search-again" data-q="${esc(s.q)}" title="Search “${esc(s.q)}”">${icSpan('clock')}<span>${esc(s.q)}</span><button class="sc-x" data-act="search-forget" data-i="${i}" title="Remove">${ic('close')}</button></span>`).join('')}</div></section>`;
 }
 
 // ------------------------------------------------------------------ sidebar
@@ -759,7 +795,7 @@ audio.addEventListener('play', onPlayState);
 audio.addEventListener('pause', onPlayState);
 audio.addEventListener('ended', () => next(true));
 audio.addEventListener('waiting', () => setLoading(true));
-audio.addEventListener('playing', () => setLoading(false));
+audio.addEventListener('playing', () => { setLoading(false); pushHistory(P.current); });
 audio.addEventListener('error', () => {
   if (!audio.src || !P.current) return;
   setLoading(false);
@@ -1115,6 +1151,41 @@ function toggleSave(album) {
   const b = $('[data-act="album-save"]');
   if (b) { const on = i < 0; setIcon(b, on ? 'checkCircle' : 'plusCircle'); b.classList.toggle('on', false); b.title = on ? 'Remove from Your Library' : 'Save to Your Library'; }
 }
+// Listen history: every song that actually starts playing, newest first (see the 'playing'
+// listener). Resuming after a pause, or repeat-one, doesn't add a duplicate.
+function pushHistory(t) {
+  if (!t?.id || state.history[0]?.id === t.id) return;
+  const entry = { ...slimTrack(t), playedAt: Date.now() };
+  state.history = [entry, ...state.history].slice(0, 200);
+  store.set('history', state.history);
+}
+// Search history. Searches run as you type, so a query that extends (or trims) the one
+// saved a few seconds ago replaces it: typing "zelda" saves "zelda", not "z", "ze", "zel"...
+function pushSearch(q) {
+  const k = q.toLowerCase();
+  const [last, ...rest] = state.searches;
+  const lk = last?.q.toLowerCase();
+  const typing = last && Date.now() - last.at < 15000 && (k.startsWith(lk) || lk.startsWith(k));
+  const older = (typing ? rest : state.searches).filter((s) => s.q.toLowerCase() !== k);
+  state.searches = [{ q, at: Date.now() }, ...older].slice(0, 20);
+  store.set('searches', state.searches);
+}
+function timeAgo(ts) {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return 'Just now';
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return plural(Math.floor(s / 3600), 'hour') + ' ago';
+  if (s < 7 * 86400) return plural(Math.floor(s / 86400), 'day') + ' ago';
+  return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function dayLabel(ts) {
+  const d = new Date(ts); d.setHours(0, 0, 0, 0);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((today - d) / 86400000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}) });
+}
 function pushRecent(a) {
   if (!a.path) return;
   const known = albumCache.get(a.path);
@@ -1331,7 +1402,12 @@ document.addEventListener('click', async (e) => {
     case 'choose-dir': state.settings = await api.chooseDownloadDir(); render(); break;
     case 'pref': state.prefs[el.dataset.k] = el.dataset.v; savePrefs(); render(); toast(el.dataset.v === 'FLAC' ? 'Lossless streaming on — applies from the next song' : 'Streaming MP3'); break;
     case 'exclusive': setExclusive(el.dataset.v === '1'); render(); break;
-    case 'clear-recent': state.recent = []; store.set('recent', []); render(); break;
+    case 'clear-recent': state.recent = []; store.set('recent', []); state.history = []; store.set('history', []); render(); break;
+    case 'history-clear': state.history = []; store.set('history', []); render(); toast('Listen history cleared'); break;
+    case 'hist-play': if (!e.target.closest('a')) playList(state.history, +el.dataset.i, 'history'); break;
+    case 'search-again': go({ name: 'search', q: el.dataset.q }, { replace: curRoute?.name === 'search' }); break;
+    case 'search-forget': e.stopPropagation(); state.searches.splice(+el.dataset.i, 1); store.set('searches', state.searches); render(); break;
+    case 'searches-clear': state.searches = []; store.set('searches', []); render(); break;
     case 'clear-lyrics': LYR.choices = {}; store.set('lyricsChoice', {}); LYR.cache.clear(); render(); break;
     case 'open-site': api.openExternal(el.dataset.url); break;
     // Now Playing

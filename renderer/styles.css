@@ -212,6 +212,38 @@ kbd { font: 500 11px var(--font); color: var(--muted); border: 1px solid var(--l
 .chip.active { background: var(--text); color: #111; border-color: var(--text); }
 .chips-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* Recent searches (Search page) */
+.search-chip { gap: 8px; padding: 0 6px 0 12px; cursor: pointer; max-width: 320px; }
+.search-chip > span:not(.ico) { overflow: hidden; text-overflow: ellipsis; }
+.search-chip .ico { color: var(--muted); }
+.search-chip .ico > svg { width: 14px; height: 14px; }
+.sc-x { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); flex: none; transition: background .15s, color .15s; }
+.sc-x > svg { width: 13px; height: 13px; }
+.sc-x:hover { background: rgba(255,255,255,.1); color: var(--text); }
+.section:has(.search-chip) { margin-bottom: 40px; }
+
+/* Listen history tiles (Home) */
+.hist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
+.hist-item {
+  position: relative; display: flex; align-items: center; gap: 12px; height: 64px; padding: 0 12px 0 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; cursor: pointer;
+  transition: background .15s;
+}
+.hist-item:hover { background: var(--surface-2); }
+.hist-item img { width: 62px; height: 62px; object-fit: cover; flex: none; background: var(--surface-2); }
+.hi-text { min-width: 0; flex: 1; }
+.hi-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hi-sub { color: var(--sub); font-size: 12.5px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hi-sub a:hover { color: var(--text); text-decoration: underline; }
+.hi-when { color: var(--muted); font-size: 12px; flex: none; transition: opacity .15s; }
+.hi-play {
+  position: absolute; right: 12px; top: 50%; width: 36px; height: 36px; margin-top: -18px; border-radius: 50%;
+  background: var(--text); color: #111; display: grid; place-items: center; opacity: 0; transition: opacity .15s;
+}
+.hi-play > svg { width: 14px; height: 14px; fill: currentColor; }
+.hist-item:hover .hi-play { opacity: 1; }
+.hist-item:hover .hi-when { opacity: 0; }
+
 /* ------------------------------------------------------------------ main view */
 .view { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; position: relative; }
 .page { padding: 20px var(--pad) 56px; }
