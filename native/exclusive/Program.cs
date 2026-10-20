@@ -3,9 +3,11 @@
 // Protocol: one JSON object per line.
 //   stdin  (commands): {"cmd":"load","id":7,"url":"https://…flac","start":0,"autoplay":true}
 //                      {"cmd":"play"} {"cmd":"pause"} {"cmd":"seek","position":12.5}
-//                      {"cmd":"volume","value":0.6} {"cmd":"stop"} {"cmd":"quit"}
+//                      {"cmd":"stop"} {"cmd":"quit"}
+//                      System volume (default device): {"cmd":"getvolume"} {"cmd":"volume","value":0.6} {"cmd":"mute","value":true}
 //   stdout (events):   {"event":"ready","duration":…,"source":"16-bit / 44.1 kHz FLAC","format":…,"device":…,"volume":…,"hardwareVolume":…}
 //                      {"event":"state","state":"playing|paused|stopped"} {"event":"position",…}
+//                      {"event":"volume","level":0.42,"muted":false}   (at start, on request, and whenever it changes)
 //                      {"event":"seeked",…} {"event":"ended"} {"event":"error","code":"notallowed|busy|unsupported|device|decode|network","message":…}
 // The process exits when stdin closes (i.e. when GameSong quits).
 //
@@ -47,7 +49,9 @@ namespace GameSong.Exclusive
             if (args.Length >= 2 && args[0] == "--probe") return Probe(args[1]);
 
             var player = new Player();
-            Send("hello", "version", 1);
+            var systemVolume = new SystemVolume();
+            Send("hello", "version", 2);
+            systemVolume.Start();
             string line;
             while ((line = Console.In.ReadLine()) != null)
             {
@@ -72,7 +76,9 @@ namespace GameSong.Exclusive
                         case "play": player.Play(); break;
                         case "pause": player.Pause(); break;
                         case "seek": player.Seek(Num(cmd, "position", 0)); break;
-                        case "volume": player.SetVolume(Num(cmd, "value", 1)); break;
+                        case "getvolume": systemVolume.Poll(true); break;
+                        case "volume": systemVolume.Set((float)Num(cmd, "value", 1)); break;
+                        case "mute": systemVolume.SetMuted(cmd.ContainsKey("value") && (bool)cmd["value"]); break;
                         case "stop": player.Stop(); break;
                         case "quit": player.Stop(); return 0;
                     }

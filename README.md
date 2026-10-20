@@ -50,6 +50,7 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
   - Playback controls centered under the seek bar, with the lyrics button in the like / download row.
   - A scrollable **Playing Queue** with the whole queue: played tracks above, the current one highlighted, upcoming below. Click any row to play it.
   - Full-screen mode (the button, or `F11`). Text and controls scale with the screen.
+- **Volume** (Windows): the slider *is* the system volume of your default playback device. It matches Windows at startup, follows changes made in Windows (volume flyout, keyboard keys), and never changes when songs change. Mute is the system mute. GameSong's own player always runs at 100%.
 - **Exclusive mode** (Windows, bit-perfect FLAC): see below.
 - **Lyrics** (from [LRCLIB](https://lrclib.net), a free, open lyrics database):
   - The album art fades out and the lyrics fade in.
@@ -68,7 +69,7 @@ Turn it on with the headphones button in the player bar or in **Settings**. Whil
 
 - **Bit-perfect:** the Windows mixer is skipped, so nothing is resampled, mixed or volume-scaled. The device runs at the file's own format (for example 24-bit / 44.1 kHz). 16-bit audio is only zero-padded if the device wants a bigger container, which is lossless.
 - **The gold `EXCLUSIVE` badge** shows it's active. Hover it to see the exact source format, output format and device.
-- **The volume slider** controls the device's own volume, because Windows doesn't apply software volume to an exclusive stream. On a DAC with hardware volume this stays bit-perfect. If the device has no hardware volume, use its own volume control.
+- **The volume slider** is still the system volume. On a DAC with hardware volume it changes the DAC itself, so playback stays bit-perfect. If the device has no hardware volume, Windows can't change an exclusive stream's level, so use the device's own volume control.
 - **Other apps can't play sound** on that device while GameSong holds it. Turning Exclusive mode off, or quitting, releases it.
 
 GameSong plays normally instead, and says why, when:

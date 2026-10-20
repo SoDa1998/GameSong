@@ -360,12 +360,6 @@ namespace GameSong.Exclusive
             Program.Send("seeked", "position", seconds);
         }
 
-        public void SetVolume(double v)
-        {
-            Session s = session;
-            if (s != null && s.Volume != null) s.Volume.Level = (float)v;
-        }
-
         /// <summary>Stops playback and releases the device so other apps can use it again.</summary>
         public void Stop()
         {

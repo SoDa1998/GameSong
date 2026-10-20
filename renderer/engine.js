@@ -59,11 +59,11 @@ export class PlaybackEngine extends EventTarget {
     this.ex.send({ cmd: 'pause' });
   }
 
-  /** Volume 0..1. Normal mode: perceptual curve in the browser. Exclusive: the device's own volume (a DAC's hardware volume keeps it bit-perfect). */
-  setVolume(v) {
-    if (this.mode === 'exclusive') this.ex.send({ cmd: 'volume', value: v });
-    else this.html.volume = v * v;
-  }
+  /**
+   * Browser-side gain 0..1 (perceptual curve). On Windows the app leaves this at 1 and drives the
+   * system volume instead (see app.js); an exclusive stream never gets software gain at all.
+   */
+  setVolume(v) { this.html.volume = v * v; }
 
   // ---------------------------------------------------------------- loading
   loadHtml(url, startAt = 0) {

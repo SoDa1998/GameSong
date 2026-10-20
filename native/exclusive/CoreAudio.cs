@@ -248,6 +248,92 @@ namespace GameSong.Exclusive
             }
         }
 
+        public bool Muted
+        {
+            get { bool m; return volume != null && volume.GetMute(out m) == 0 && m; }
+            set { if (volume == null) return; Guid ctx = Guid.Empty; volume.SetMute(value, ref ctx); }
+        }
+
         public void Dispose() { Wasapi.Release(volume); volume = null; }
+    }
+
+    /// <summary>
+    /// The Windows system volume (default playback device), which GameSong's volume slider mirrors.
+    /// Polled so changes from the Windows volume flyout, keyboard keys or a device switch reach the app.
+    /// </summary>
+    internal sealed class SystemVolume
+    {
+        readonly object gate = new object();
+        IMMDevice device;
+        EndpointVolume volume;
+        string deviceId;
+        float lastLevel = -1;
+        bool lastMuted;
+
+        public void Start()
+        {
+            var t = new System.Threading.Thread(() =>
+            {
+                while (true)
+                {
+                    try { Poll(false); } catch { }
+                    System.Threading.Thread.Sleep(400);
+                }
+            }) { IsBackground = true, Name = "system-volume" };
+            t.Start();
+        }
+
+        /// <summary>Re-reads the default device's volume and reports it when it changed (or always, when forced).</summary>
+        public void Poll(bool force)
+        {
+            float level; bool muted;
+            lock (gate)
+            {
+                EnsureDevice();
+                if (volume == null) return;
+                level = volume.Level;
+                muted = volume.Muted;
+                if (!force && Math.Abs(level - lastLevel) < 0.0005f && muted == lastMuted) return;
+                lastLevel = level; lastMuted = muted;
+            }
+            Program.Send("volume", "level", level, "muted", muted);
+        }
+
+        void EnsureDevice()
+        {
+            IMMDevice dev = Wasapi.DefaultDevice();
+            string id;
+            dev.GetId(out id);
+            if (id == deviceId && volume != null) { Wasapi.Release(dev); return; }
+            if (volume != null) volume.Dispose();
+            Wasapi.Release(device);
+            device = dev;
+            deviceId = id;
+            volume = new EndpointVolume(dev);
+            lastLevel = -1; // new default device: always report it
+        }
+
+        public void Set(float level)
+        {
+            lock (gate)
+            {
+                EnsureDevice();
+                if (volume == null) return;
+                volume.Level = level;
+                if (level > 0 && volume.Muted) volume.Muted = false;
+                lastLevel = volume.Level; lastMuted = volume.Muted;   // our own change: don't echo it back
+            }
+        }
+
+        public void SetMuted(bool muted)
+        {
+            lock (gate)
+            {
+                EnsureDevice();
+                if (volume == null) return;
+                volume.Muted = muted;
+                lastMuted = muted;
+            }
+        }
     }
 }

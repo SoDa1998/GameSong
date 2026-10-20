@@ -618,7 +618,6 @@ function explainExclusiveFailure(e) {
 function setExclusive(on) {
   state.prefs.exclusive = !!on;
   savePrefs();
-  deviceVolume = null;
   updateExclusiveUI();
   if (!P.current || !audio.src) { if (!on) audio.releaseExclusive(); return; }
   const at = audio.currentTime || 0;
@@ -641,7 +640,6 @@ audio.addEventListener('exclusiveerror', (e) => {
   toast(`Exclusive playback stopped: ${e.detail.message} Playing normally instead.`, 'err');
   const at = audio.currentTime || 0;
   audio.releaseExclusive();
-  deviceVolume = null;
   loadAndPlayNormal(at);
 });
 async function loadAndPlayNormal(at) {
@@ -804,29 +802,52 @@ $$('.js-seek').forEach((el) => makeSlider(el, {
   onInput: (f) => { seeking = true; paintProgress(f); setText('.js-cur', fmtTime(f * (audio.duration || P.current?.durSec || 0))); },
   onCommit: (f) => { seeking = false; if (audio.duration) audio.currentTime = f * audio.duration; },
 }));
-// In Exclusive mode Windows applies no software volume to the stream, so the slider drives the
-// device's own volume instead (on a DAC with hardware volume this keeps playback bit-perfect).
-let deviceVolume = null;
-const currentVolume = () => (audio.mode === 'exclusive' ? (deviceVolume ?? 1) : state.prefs.volume);
+// Volume. On Windows the slider *is* the system volume of the default playback device (read at
+// startup, kept in sync when Windows changes it, and never touched by song changes); the in-app
+// player stays at 100%. Exclusive streams get no software volume anyway, so the same slider works
+// in both modes (on a DAC with hardware volume, Exclusive playback stays bit-perfect).
+// Elsewhere (no native helper) it falls back to an in-app volume saved in prefs.
+let systemVolume = false;                         // true once the native helper reports the system volume
+const sys = { level: 1, muted: false };
+const currentVolume = () => (systemVolume ? sys.level : state.prefs.volume);
+const isMuted = () => (systemVolume ? sys.muted : state.prefs.muted);
 
 function setVolume(v, persist = true) {
   v = Math.min(1, Math.max(0, v));
-  if (v > 0) state.prefs.muted = false;
-  if (audio.mode === 'exclusive') deviceVolume = v;
-  else { state.prefs.volume = v; if (persist) savePrefs(); }
+  if (systemVolume) {
+    sys.level = v;
+    if (v > 0) sys.muted = false;
+    api.exclusive.send({ cmd: 'volume', value: v });
+  } else {
+    if (v > 0) state.prefs.muted = false;
+    state.prefs.volume = v;
+    if (persist) savePrefs();
+  }
+  applyVolume();
+}
+function toggleMute() {
+  if (systemVolume) {
+    sys.muted = !sys.muted;
+    api.exclusive.send({ cmd: 'mute', value: sys.muted });
+    if (!sys.muted && sys.level === 0) setVolume(0.5);
+  } else {
+    state.prefs.muted = !state.prefs.muted;
+    if (!state.prefs.muted && state.prefs.volume === 0) state.prefs.volume = 0.5;
+    savePrefs();
+  }
   applyVolume();
 }
 function applyVolume() {
   const exclusive = audio.mode === 'exclusive';
-  if (exclusive && deviceVolume == null) deviceVolume = audio.info?.volume ?? 1;
-  const v = state.prefs.muted ? 0 : currentVolume();
-  audio.setVolume(v);
+  const v = isMuted() ? 0 : currentVolume();
+  audio.setVolume(systemVolume ? 1 : v);
   const usable = !exclusive || audio.info?.hardwareVolume !== false;
   $$('.js-vol').forEach((s) => {
     s.querySelector('.slider-fill').style.width = v * 100 + '%';
     s.querySelector('.slider-thumb').style.left = v * 100 + '%';
     s.classList.toggle('disabled', !usable);
-    s.title = !exclusive ? '' : usable ? `Device volume (${audio.info?.device || 'audio device'})` : "This device has no hardware volume: use its own volume control (Exclusive mode keeps the signal untouched)";
+    s.title = !usable ? "This device has no hardware volume: use its own volume control (Exclusive mode keeps the signal untouched)"
+      : systemVolume ? `System volume: ${Math.round(v * 100)}%` : '';
   });
   $$('.js-mute').forEach((b) => setIcon(b, v === 0 ? 'volumeOff' : v < 0.5 ? 'volumeLow' : 'volume'));
 }
@@ -1394,11 +1415,7 @@ $$('.js-prev').forEach((b) => b.addEventListener('click', prev));
 $$('.js-shuffle').forEach((b) => b.addEventListener('click', toggleShuffle));
 $$('.js-repeat').forEach((b) => b.addEventListener('click', cycleRepeat));
 $$('.js-like').forEach((b) => b.addEventListener('click', () => P.current && toggleLike(P.current)));
-$$('.js-mute').forEach((b) => b.addEventListener('click', () => {
-  state.prefs.muted = !state.prefs.muted;
-  if (!state.prefs.muted && currentVolume() === 0) setVolume(0.5);
-  applyVolume(); savePrefs();
-}));
+$$('.js-mute').forEach((b) => b.addEventListener('click', toggleMute));
 $('#btnExclusive').addEventListener('click', () => setExclusive(!state.prefs.exclusive));
 $('#btnQueue').addEventListener('click', () => { state.prefs.queueOpen = !state.prefs.queueOpen; savePrefs(); renderQueue(); });
 $('#btnLyrics').addEventListener('click', () => { if (npOpen() && state.prefs.npLyrics) closeNP(); else openNP({ lyrics: true }); });
@@ -1472,6 +1489,18 @@ view.addEventListener('scroll', closeMenu, { passive: true });
   state.settings = await api.getSettings();
   exclusiveAvailable = !!(await api.exclusive?.available?.().catch(() => false));
   updateExclusiveUI();
+  if (exclusiveAvailable) {
+    // Mirror the Windows system volume: first value now, then whenever it changes outside the app.
+    systemVolume = true;
+    api.exclusive.onEvent((ev) => {
+      if (ev.event !== 'volume') return;
+      if ($('.js-vol.dragging')) return; // the user is moving our slider; their value wins
+      sys.level = Math.min(1, Math.max(0, ev.level));
+      sys.muted = !!ev.muted;
+      applyVolume();
+    });
+    api.exclusive.send({ cmd: 'getvolume' });
+  }
   applyVolume();
   applySidebar();
   updateModeButtons();
