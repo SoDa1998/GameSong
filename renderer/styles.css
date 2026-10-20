@@ -113,6 +113,12 @@ img { display: block; }
 .side-sub { color: var(--sub); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-empty { color: var(--muted); font-size: 12.5px; line-height: 1.5; padding: 8px 8px; }
 
+/* Options button pinned to the bottom of the sidebar */
+.side-footer { flex: none; border-top: 1px solid var(--line); margin: 0 -12px; padding: 8px 12px 12px; }
+.options-btn { width: 100%; text-align: left; }
+.options-btn.open { color: var(--text); background: var(--surface-2); }
+.menu.options-menu { min-width: 260px; }
+
 /* Collapse toggle in the logo row */
 .sidebar-toggle { margin-left: auto; margin-right: -8px; -webkit-app-region: no-drag; }
 .sidebar-toggle > svg { width: 19px; height: 19px; }

@@ -45,6 +45,7 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 - **Charts**: the site's chart pages, such as the Top 40, Most favorited and the all-time Top 1000.
 - **Your Library**: Liked Songs, saved albums, recently played albums and downloads.
 - **Sidebar**: collapses to an icon-only rail with the button next to the logo or `Ctrl + B`.
+- **Options menu** (bottom-left of the sidebar): quick toggles for Exclusive mode and streaming quality, plus Downloads, the download folder, a random album, collapsing the sidebar, Settings and the KHInsider site.
 - **Now Playing screen**: opens from the player bar's expand button, the cover art, or the `N` key.
   - Large blurred-art backdrop with full-resolution cover art.
   - Playback controls centered under the seek bar, with the lyrics button in the like / download row.

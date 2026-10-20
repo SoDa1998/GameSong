@@ -1401,6 +1401,49 @@ function toggleSidebar() {
 }
 $('#sidebarToggle').addEventListener('click', toggleSidebar);
 
+// Options menu (bottom of the sidebar): quick toggles and shortcuts to app-level pages.
+function openOptions() {
+  const btn = $('#btnOptions');
+  const onOff = (v) => (v ? 'On' : 'Off');
+  const items = [{ header: 'Playback' }];
+  const onSettings = () => nav.stack[nav.idx]?.name === 'settings';
+  if (exclusiveAvailable) items.push({ label: 'Exclusive mode (bit-perfect)', icon: 'exclusive', right: onOff(state.prefs.exclusive), onClick: () => { setExclusive(!state.prefs.exclusive); if (onSettings()) render(); } });
+  items.push(
+    {
+      label: 'Streaming quality', icon: 'music', right: state.prefs.stream === 'FLAC' ? 'Lossless' : 'MP3',
+      onClick: () => {
+        state.prefs.stream = state.prefs.stream === 'FLAC' ? 'MP3' : 'FLAC';
+        savePrefs();
+        toast(state.prefs.stream === 'FLAC' ? 'Lossless streaming on: applies from the next song' : 'Streaming MP3');
+        if (onSettings()) render();
+      },
+    },
+    'hr',
+    { label: 'Downloads', icon: 'download', onClick: () => go({ name: 'downloads' }) },
+    { label: 'Open download folder', icon: 'folder', onClick: () => api.reveal() },
+    { label: 'Random album', icon: 'dice', onClick: randomAlbum },
+    { label: state.prefs.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar', icon: state.prefs.sidebarCollapsed ? 'sidebarOpen' : 'sidebarClose', right: 'Ctrl+B', onClick: toggleSidebar },
+    'hr',
+    { label: 'Settings', icon: 'settings', onClick: () => go({ name: 'settings' }) },
+    { label: 'Visit KHInsider', icon: 'external', onClick: () => api.openExternal(SITE + '/') },
+  );
+  openMenu(btn, items);
+  const m = optionsMenu = menuEl;
+  m.classList.add('options-menu');
+  btn.classList.add('open');
+  // Un-highlight once the menu goes away (picked, clicked outside, resize...).
+  new MutationObserver((_, obs) => { if (menuEl !== m) { btn.classList.remove('open'); obs.disconnect(); } })
+    .observe(m, { attributes: true, attributeFilter: ['class'] });
+}
+// The outside-click handler closes the menu on mousedown (it stays in the DOM while
+// it fades out), so a second click on the button should close it, not reopen it.
+let optionsMenu = null, optionsWasOpen = false;
+$('#btnOptions').addEventListener('mousedown', () => { optionsWasOpen = !!optionsMenu?.isConnected; });
+$('#btnOptions').addEventListener('click', () => {
+  if (optionsWasOpen) { optionsWasOpen = false; return; }
+  openOptions();
+});
+
 // Fade images in once they've loaded instead of popping in.
 document.addEventListener('load', (e) => {
   if (e.target instanceof HTMLImageElement) e.target.classList.add('is-loaded');
