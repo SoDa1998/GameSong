@@ -41,8 +41,8 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 - **Home**: a featured carousel, your listen history, recently played albums, fresh additions, the Top 40 and popular series.
 - **Listen history**: every song you play, newest first. Home shows the latest eight; **See all** opens the full history (up to 200 songs) grouped by day, where you can replay, download or clear it.
 - **Search**: shows a top result. Filter by album type and sort by relevance, popularity, date or year.
+  - Before you type, it's also where you browse: by album type, by platform, A–Z, or the charts.
   - **Recent searches** appear on the Search page before you type. Click one to search again, or × to remove it. Searches made while typing are saved once, as the finished query.
-- **Browse**: by album type, by platform, or A–Z.
 - **Charts**: the site's chart pages, such as the Top 40, Most favorited and the all-time Top 1000.
 - **Your Library**: Liked Songs, saved albums, recently played albums and downloads.
 - **Sidebar**: collapses to an icon-only rail with the button next to the logo or `Ctrl + B`.

@@ -1,7 +1,7 @@
 {
   "name": "gamesong",
   "productName": "GameSong",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "A simple, modern streaming and download client for the KHInsider video game music archive.",
   "author": "GameSong",
   "main": "main.js",

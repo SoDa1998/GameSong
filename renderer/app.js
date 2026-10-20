@@ -346,12 +346,8 @@ const VIEWS = {
     const albums = tab === 'recent' ? state.recent : state.saved;
     const tabs = `<div class="tabs"><button class="chip ${tab === 'albums' ? 'active' : ''}" data-act="lib-tab" data-tab="albums">Saved albums</button><button class="chip ${tab === 'recent' ? 'active' : ''}" data-act="lib-tab" data-tab="recent">Recently played</button>
       <button class="chip" data-act="nav" data-view="liked">Liked Songs</button><button class="chip" data-act="nav" data-view="downloads">Downloads</button></div>`;
-    const empty = `<div class="empty">${icSpan(tab === 'recent' ? 'clock' : 'library')}<h3>${tab === 'recent' ? 'Nothing played yet' : 'No saved albums yet'}</h3><p>${tab === 'recent' ? 'Albums you play show up here.' : 'Tap the ⊕ button on any album to save it here.'}</p><button class="pill-btn primary" data-act="nav" data-view="browse">Browse music</button></div>`;
+    const empty = `<div class="empty">${icSpan(tab === 'recent' ? 'clock' : 'library')}<h3>${tab === 'recent' ? 'Nothing played yet' : 'No saved albums yet'}</h3><p>${tab === 'recent' ? 'Albums you play show up here.' : 'Tap the ⊕ button on any album to save it here.'}</p><button class="pill-btn primary" data-act="nav" data-view="search">Browse music</button></div>`;
     setView(`<div class="page"><h1 class="page-title">Your Library</h1>${tabs}${albums.length ? grid(albums) : empty}</div>`);
-  },
-
-  async browse() {
-    setView(`<div class="page"><h1 class="page-title">Browse</h1>${browseAll()}</div>`);
   },
 
   async search(r, tk) {
@@ -466,7 +462,7 @@ const VIEWS = {
       <div class="head-art" style="background:linear-gradient(135deg,#3f5468,#262a31)">${ic('clock')}</div>
       <div class="head-text"><div class="eyebrow">Your activity</div><h1 class="head-title">Listen history</h1><div class="head-meta"><span>${plural(state.history.length, 'song')}</span></div></div></div>`;
     if (!state.history.length) {
-      setView(`${head}<div class="empty">${icSpan('clock')}<h3>Nothing played yet</h3><p>Songs you listen to show up here.</p><button class="pill-btn primary" data-act="nav" data-view="browse">Browse music</button></div>`);
+      setView(`${head}<div class="empty">${icSpan('clock')}<h3>Nothing played yet</h3><p>Songs you listen to show up here.</p><button class="pill-btn primary" data-act="nav" data-view="search">Browse music</button></div>`);
       return;
     }
     const formats = [...new Set(state.history.flatMap((t) => Object.keys(t.sizes || {})))];
