@@ -179,6 +179,14 @@ async function render(restore = false) {
   markPlaying();
 }
 const live = (tk) => tk === renderToken;
+// Redraw Settings in place after a change made on it: no fade, same scroll position.
+function refreshSettings() {
+  if (nav.stack[nav.idx]?.name !== 'settings') return;
+  const top = view.scrollTop;
+  setView.quiet = true;
+  try { VIEWS.settings(); } finally { setView.quiet = false; }
+  view.scrollTop = top;
+}
 const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
@@ -187,7 +195,7 @@ const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matche
  * moved (not copied) into a temporary layer above the view, so this stays cheap.
  * Live refreshes (download progress) pass animate:false and keep their scroll position.
  */
-function setView(html, { animate = true } = {}) {
+function setView(html, { animate = !setView.quiet } = {}) {
   if (animate && !reduceMotion() && view.firstChild) {
     $$('.view-ghost').forEach((g) => g.remove());
     const ghost = document.createElement('div');
@@ -472,7 +480,26 @@ const VIEWS = {
   async settings() {
     const s = state.settings;
     const p = state.prefs;
+    const theme = p.theme || 'dark';
+    const seg = (act, cur, opts) => `<div class="seg">${opts.map(([v, l]) => `<button class="${cur === v ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
+    const swatches = (key, list, cur, { withDefault = false } = {}) => `<div class="swatches">
+      ${withDefault ? `<button class="swatch default ${!isHex(cur) ? 'on' : ''}" data-act="appearance" data-k="${key}" data-v="" title="Default (no colour)"></button>` : ''}
+      ${list.map((c) => `<button class="swatch ${cur?.toLowerCase() === c ? 'on' : ''}" style="--sw:${c}" data-act="appearance" data-k="${key}" data-v="${c}" title="${c}"></button>`).join('')}
+      <label class="swatch picker ${isHex(cur) && !list.includes(cur.toLowerCase()) ? 'on' : ''}" title="Pick any colour" ${isHex(cur) && !list.includes(cur.toLowerCase()) ? `style="--sw:${cur}"` : ''}><input type="color" data-appearance="${key}" value="${isHex(cur) ? cur : list[0]}"></label></div>`;
+    const transparency = p.glassTransparency ?? 40;
     setView(`<div class="page settings"><h1 class="page-title">Settings</h1>
+      <h2 class="settings-group">Appearance</h2>
+      <div class="setting"><div><div class="s-title">Display mode</div><div class="s-desc">System follows Windows' light or dark mode. Custom builds the whole theme from one colour.</div></div>
+        ${seg('theme', theme, [['dark', 'Dark'], ['light', 'Light'], ['system', 'System'], ['custom', 'Custom']])}</div>
+      ${theme === 'custom' ? `<div class="setting sub"><div><div class="s-title">Theme colour</div><div class="s-desc">The background colour. Dark colours make a dark theme, light colours a light one.</div></div>
+        ${swatches('themeColor', THEME_COLORS, p.themeColor)}</div>` : ''}
+      <div class="setting"><div><div class="s-title">Accent colour</div><div class="s-desc">Play buttons, progress bars, selected chips and liked songs. Default keeps it black and white.</div></div>
+        ${swatches('accent', ACCENTS, p.accent, { withDefault: true })}</div>
+      <div class="setting"><div><div class="s-title">Frosted glass</div><div class="s-desc">${glassSupported ? 'Makes the window translucent and blurs your desktop behind it.' : 'Needs Windows 11 (version 22H2 or newer).'}</div></div>
+        ${glassSupported ? seg('glass', p.glass ? '1' : '0', [['0', 'Off'], ['1', 'On']]) : '<div class="seg disabled"><button class="on">Off</button><button disabled>On</button></div>'}</div>
+      ${glassSupported && p.glass ? `<div class="setting sub"><div><div class="s-title">Transparency</div><div class="s-desc">How much of the desktop shows through.</div></div>
+        <div class="range-row"><input type="range" class="range" min="0" max="90" step="5" value="${transparency}" data-appearance="glassTransparency"><span class="range-val" id="glassVal">${transparency}%</span></div></div>` : ''}
+      <h2 class="settings-group">Playback and downloads</h2>
       <div class="setting"><div><div class="s-title">Streaming quality</div><div class="s-desc">Lossless uses FLAC when an album offers it, and falls back to MP3.</div></div>
         <div class="seg"><button class="${p.stream === 'MP3' ? 'on' : ''}" data-act="pref" data-k="stream" data-v="MP3">Normal · MP3</button><button class="${p.stream === 'FLAC' ? 'on' : ''}" data-act="pref" data-k="stream" data-v="FLAC">Lossless · FLAC</button></div></div>
       ${exclusiveAvailable ? `<div class="setting"><div><div class="s-title">Exclusive mode (bit-perfect)</div><div class="s-desc">Streams the FLAC version straight to your audio device in WASAPI exclusive mode, skipping the Windows mixer: no resampling, mixing or volume processing. While it's on, other apps can't play sound on that device, and the volume slider controls the device itself. Albums without FLAC play normally.</div></div>
@@ -481,10 +508,12 @@ const VIEWS = {
         <div style="display:flex;gap:8px;flex:none"><button class="pill-btn" data-act="dl-open-folder">${icSpan('folder')}Open</button><button class="pill-btn primary" data-act="choose-dir">Change</button></div></div>
       <div class="setting"><div><div class="s-title">Simultaneous downloads</div><div class="s-desc">How many files download at the same time.</div></div>
         <select class="select" id="concSel">${[1, 2, 3, 4, 5, 6].map((n) => `<option ${s.concurrency === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <h2 class="settings-group">History and data</h2>
       <div class="setting"><div><div class="s-title">Listening history</div><div class="s-desc">${plural(state.history.length, 'song')} in your listen history, ${plural(state.recent.length, 'recently played album')}.</div></div><button class="pill-btn" data-act="clear-recent">Clear</button></div>
       <div class="setting"><div><div class="s-title">Search history</div><div class="s-desc">${plural(state.searches.length, 'recent search')}.</div></div><button class="pill-btn" data-act="searches-clear">Clear</button></div>
       <div class="setting"><div><div class="s-title">Saved lyric choices</div><div class="s-desc">Lyrics you picked by hand for ${plural(Object.keys(LYR.choices).length, 'song')}.</div></div><button class="pill-btn" data-act="clear-lyrics">Clear</button></div>
-      <div class="setting"><div><div class="s-title">About</div><div class="s-desc">GameSong is an unofficial player for the KHInsider video game music archive. Music is streamed from downloads.khinsider.com; lyrics come from LRCLIB. Icons by Lucide, typeface Inter.</div></div>
+      <h2 class="settings-group">About</h2>
+      <div class="setting"><div><div class="s-title">GameSong</div><div class="s-desc">GameSong is an unofficial player for the KHInsider video game music archive. Music is streamed from downloads.khinsider.com; lyrics come from LRCLIB. Icons by Lucide, typeface Inter.</div></div>
         <button class="pill-btn" data-act="open-site" data-url="${SITE}/">${icSpan('external')}KHInsider</button></div>
       <div class="setting"><div class="s-desc"><b style="color:var(--text);font-weight:500">Shortcuts</b> · Space play/pause · Ctrl+←/→ previous/next · Ctrl+↑/↓ volume · Ctrl+K search · Ctrl+B sidebar · N Now Playing · L lyrics · F11 full screen · Alt+← back</div></div>
     </div>`);
@@ -938,12 +967,14 @@ function openNP({ lyrics } = {}) {
   closeMenu();
   np.classList.remove('closing');
   np.hidden = false;
+  applyTheme();   // light title-bar buttons over the (always dark) Now Playing screen
   renderNP();
 }
 function closeNP() {
   if (np.hidden) return;
   np.classList.add('closing');
   setTimeout(() => { if (np.classList.contains('closing')) { np.hidden = true; np.classList.remove('closing'); } }, 240);
+  applyTheme();
   if (document.body.classList.contains('fs')) api.setFullscreen(false);
 }
 const npOpen = () => !np.hidden && !np.classList.contains('closing');
@@ -1401,8 +1432,15 @@ document.addEventListener('click', async (e) => {
     case 'dl-clear': for (const [id, d] of DL) if (!['queued', 'resolving', 'downloading'].includes(d.state)) DL.delete(id); persistDownloads(); render(); break;
     case 'dl-open-folder': api.reveal(); break;
     case 'choose-dir': state.settings = await api.chooseDownloadDir(); render(); break;
-    case 'pref': state.prefs[el.dataset.k] = el.dataset.v; savePrefs(); render(); toast(el.dataset.v === 'FLAC' ? 'Lossless streaming on — applies from the next song' : 'Streaming MP3'); break;
-    case 'exclusive': setExclusive(el.dataset.v === '1'); render(); break;
+    case 'pref': state.prefs[el.dataset.k] = el.dataset.v; savePrefs(); refreshSettings(); toast(el.dataset.v === 'FLAC' ? 'Lossless streaming on — applies from the next song' : 'Streaming MP3'); break;
+    case 'exclusive': setExclusive(el.dataset.v === '1'); refreshSettings(); break;
+    case 'theme': {
+      const v = el.dataset.v;
+      setAppearancePref({ theme: v, ...(v === 'custom' && !isHex(state.prefs.themeColor) ? { themeColor: THEME_COLORS[0] } : {}) });
+      break;
+    }
+    case 'appearance': setAppearancePref({ [el.dataset.k]: el.dataset.v }); break;
+    case 'glass': setAppearancePref({ glass: el.dataset.v === '1' }); break;
     case 'clear-recent': state.recent = []; store.set('recent', []); state.history = []; store.set('history', []); render(); break;
     case 'history-clear': state.history = []; store.set('history', []); render(); toast('Listen history cleared'); break;
     case 'hist-play': if (!e.target.closest('a')) playList(state.history, +el.dataset.i, 'history'); break;
@@ -1464,6 +1502,110 @@ function closeLightbox() {
 }
 lightbox.addEventListener('click', closeLightbox);
 
+// ------------------------------------------------------------------ appearance
+// Display mode (dark / light / follow Windows / custom colour), accent colour and frosted glass.
+// Every theme colour is a CSS custom property on <html>; this computes and sets them all.
+const hexRgb = (h) => { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+const rgbHex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+const mixRgb = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const luminance = ([r, g, b]) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b); };
+const isHex = (s) => /^#[0-9a-f]{6}$/i.test(s || '');
+
+const ACCENTS = ['#1ed760', '#4f8cff', '#a36bff', '#ff5c8a', '#ff8a3d', '#e7c46a', '#2ec4b6', '#f0544f'];
+const THEME_COLORS = ['#1b2a3d', '#2a1f3d', '#1d3326', '#3a1f24', '#33291a', '#e9e4da', '#dde7f0', '#ece3f2'];
+
+// A full palette from one base colour: surfaces step toward white on dark bases, toward black
+// on light ones. The built-in Dark and Light themes are just two fixed bases run through this.
+function paletteFrom(base) {
+  const b = hexRgb(base);
+  const dark = luminance(b) < 0.4;
+  const ink = dark ? [255, 255, 255] : [0, 0, 0];
+  const m = (t) => rgbHex(mixRgb(b, ink, t));
+  const lift = (t) => rgbHex(mixRgb(b, [255, 255, 255], t));
+  return {
+    dark,
+    bg: base, side: m(dark ? 0.025 : 0.03),
+    surface: dark ? m(0.045) : lift(0.6), 'surface-2': m(dark ? 0.075 : 0.07), 'surface-3': m(dark ? 0.11 : 0.11), line: m(dark ? 0.065 : 0.09),
+    text: dark ? '#f1f1f3' : '#17181b', sub: m(dark ? 0.56 : 0.6), muted: m(dark ? 0.36 : 0.42),
+    'menu-bg': dark ? m(0.065) : lift(0.75), 'menu-line': m(dark ? 0.1 : 0.1),
+    'sk-a': m(dark ? 0.04 : 0.05), 'sk-b': m(dark ? 0.075 : 0.025),
+    'slider-buffer': m(dark ? 0.2 : 0.2), 'focus-line': m(dark ? 0.24 : 0.3), 'fmt-line': m(dark ? 0.17 : 0.2),
+    'toast-bg': dark ? '#f1f1f3' : '#17181b', 'toast-fg': dark ? '#111' : '#fff',
+    lossless: dark ? '#e7c46a' : '#9a7414', danger: dark ? '#f0717d' : '#c8283c',
+    'bg-rgb': b.join(', '), 'side-rgb': hexRgb(m(dark ? 0.025 : 0.03)).join(', '), 'fg-rgb': ink.join(', '),
+  };
+}
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+function themeBase() {
+  const { theme = 'dark', themeColor } = state.prefs;
+  if (theme === 'custom' && isHex(themeColor)) return themeColor;
+  const light = theme === 'light' || (theme === 'system' && !darkQuery.matches);
+  return light ? '#f6f6f8' : '#111214';
+}
+let glassSupported = null;   // null until main answers; until then trust the saved pref (first paint)
+let lastAppearance = '';
+function applyTheme() {
+  const p = state.prefs;
+  const pal = paletteFrom(themeBase());
+  const root = document.documentElement;
+  const glass = !!p.glass && glassSupported !== false;
+  const vars = { ...pal };
+  delete vars.dark;
+  // Accent: "default" is monochrome (the text colour), otherwise the chosen colour everywhere.
+  const acc = isHex(p.accent) ? p.accent : null;
+  const onFor = (hex) => (luminance(hexRgb(hex)) > 0.45 ? '#111' : '#fff');
+  vars.accent = acc || pal.text;
+  vars['on-accent'] = onFor(vars.accent);
+  vars['accent-np'] = acc || '#ffffff';
+  vars['on-accent-np'] = onFor(vars['accent-np']);
+  vars.liked = vars.accent;
+  if (glass) {
+    // Translucent surfaces so the frosted backdrop shows through cards and inputs too.
+    const ink = pal['fg-rgb'];
+    Object.assign(vars, {
+      surface: `rgba(${ink}, .06)`, 'surface-2': `rgba(${ink}, .1)`, 'surface-3': `rgba(${ink}, .14)`, line: `rgba(${ink}, .09)`,
+    });
+  }
+  vars['glass-a'] = String(1 - Math.min(90, Math.max(0, p.glassTransparency ?? 40)) / 100);
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty('--' + k, v);
+  root.style.colorScheme = pal.dark ? 'dark' : 'light';
+  root.dataset.theme = pal.dark ? 'dark' : 'light';
+  root.classList.toggle('glass', glass);
+  // Tell the window: backdrop material, background colour, and title-bar button colour
+  // (Now Playing is always dark, so the buttons go light while it's open).
+  const a = { glass, dark: pal.dark || npOpen(), bg: pal.bg };
+  const key = JSON.stringify(a);
+  if (glassSupported !== null && key !== lastAppearance) { lastAppearance = key; api.setAppearance?.(a); }
+}
+darkQuery.addEventListener('change', () => { if ((state.prefs.theme || 'dark') === 'system') applyTheme(); });
+function setAppearancePref(patch, { rerender = true } = {}) {
+  Object.assign(state.prefs, patch);
+  savePrefs();
+  if (rerender && !reduceMotion()) {
+    const root = document.documentElement;
+    root.classList.add('theme-fade');
+    clearTimeout(setAppearancePref.t);
+    setAppearancePref.t = setTimeout(() => root.classList.remove('theme-fade'), 350);
+  }
+  applyTheme();
+  if (rerender) refreshSettings();
+}
+const THEME_NAMES = { dark: 'Dark', light: 'Light', system: 'System', custom: 'Custom' };
+// Colour pickers and the transparency slider preview live while you drag; Settings re-renders
+// (to move the selection ring) once you let go.
+document.addEventListener('input', (e) => {
+  const k = e.target.dataset?.appearance;
+  if (!k) return;
+  if (k === 'glassTransparency') {
+    setAppearancePref({ glassTransparency: +e.target.value }, { rerender: false });
+    const v = $('#glassVal'); if (v) v.textContent = e.target.value + '%';
+  } else {
+    setAppearancePref({ [k]: e.target.value }, { rerender: false });
+  }
+});
+document.addEventListener('change', (e) => { if (e.target.dataset?.appearance && e.target.type === 'color') refreshSettings(); });
+applyTheme();   // first paint; boot() re-applies once main says whether glass is supported
+
 // Collapsible sidebar (desktop): icons only when collapsed; remembered between launches.
 function applySidebar() {
   const collapsed = !!state.prefs.sidebarCollapsed;
@@ -1496,6 +1638,19 @@ function openOptions() {
         if (onSettings()) render();
       },
     },
+    { header: 'Appearance' },
+    {
+      label: 'Display mode', icon: 'theme', right: THEME_NAMES[state.prefs.theme || 'dark'],
+      onClick: () => {
+        // Cycle Dark → Light → System (→ Custom, if a custom colour was picked before).
+        const order = ['dark', 'light', 'system', ...(isHex(state.prefs.themeColor) ? ['custom'] : [])];
+        const next = order[(order.indexOf(state.prefs.theme || 'dark') + 1) % order.length];
+        setAppearancePref({ theme: next });
+        toast(`Display mode: ${THEME_NAMES[next]}`);
+      },
+    },
+    ...(glassSupported ? [{ label: 'Frosted glass', icon: 'glass', right: onOff(state.prefs.glass), onClick: () => setAppearancePref({ glass: !state.prefs.glass }) }] : []),
+    { label: 'Customize appearance…', icon: 'palette', onClick: () => go({ name: 'settings' }) },
     'hr',
     { label: 'Downloads', icon: 'download', onClick: () => go({ name: 'downloads' }) },
     { label: 'Open download folder', icon: 'folder', onClick: () => api.reveal() },
@@ -1609,6 +1764,8 @@ view.addEventListener('scroll', closeMenu, { passive: true });
   if (api.platform === 'darwin') $('.search-box kbd').textContent = '⌘ K';
   hydrateIcons();
   state.settings = await api.getSettings();
+  glassSupported = !!(await api.glassSupported?.().catch(() => false));
+  applyTheme();
   exclusiveAvailable = !!(await api.exclusive?.available?.().catch(() => false));
   updateExclusiveUI();
   if (exclusiveAvailable) {

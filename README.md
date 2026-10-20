@@ -53,6 +53,11 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
   - Playback controls centered under the seek bar, with the lyrics button in the like / download row.
   - A scrollable **Playing Queue** with the whole queue: played tracks above, the current one highlighted, upcoming below. Click any row to play it.
   - Full-screen mode (the button, or `F11`). Text and controls scale with the screen.
+- **Appearance** (Settings → Appearance, or the Options menu):
+  - **Display mode**: Dark, Light, System (follows Windows' light or dark mode, live), or Custom, which builds the whole theme from one colour you pick. Dark colours give a dark theme, light colours a light one.
+  - **Accent colour**: preset swatches or any colour, used for play buttons, progress bars, selected chips and liked songs. Default keeps the app black and white.
+  - **Frosted glass** (Windows 11 22H2 or newer): the window turns translucent and blurs the desktop behind it, with a **Transparency** slider from 0 to 90%. It works with every display mode.
+  - Now Playing and the Home carousel stay dark in every theme, because they sit on top of album art.
 - **Volume** (Windows): the slider *is* the system volume of your default playback device. It matches Windows at startup, follows changes made in Windows (volume flyout, keyboard keys), and never changes when songs change. Mute is the system mute. GameSong's own player always runs at 100%.
 - **Exclusive mode** (Windows, bit-perfect FLAC): see below.
 - **Lyrics** (from [LRCLIB](https://lrclib.net), a free, open lyrics database):

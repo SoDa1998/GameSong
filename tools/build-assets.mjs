@@ -70,6 +70,9 @@ const ICONS = {
   sidebarOpen: 'panel-left-open',
   exclusive: 'headphones',
   support: 'hand-heart',
+  theme: 'sun-moon',
+  palette: 'palette',
+  glass: 'blend',
 };
 
 const out = {};

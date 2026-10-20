@@ -238,6 +238,9 @@ function registerIpc() {
 
   ipcMain.handle('lyrics:search', async (_e, params) => searchLyrics(params));
 
+  ipcMain.handle('win:glassSupported', () => glassSupported());
+  ipcMain.on('win:appearance', (_e, a) => applyAppearance(a));
+
   ipcMain.handle('excl:available', () => exclusiveAvailable());
   ipcMain.on('excl:cmd', (_e, cmd) => exclusiveCommand(cmd));
 
@@ -395,19 +398,53 @@ async function searchLyrics(params = {}) {
 }
 
 // ---------------------------------------------------------------- window
+// Frosted glass = the OS blurs the desktop behind the window: Windows 11 22H2+ (acrylic
+// backdrop material) or macOS (vibrancy). The renderer then paints its panels translucent.
+function glassSupported() {
+  if (process.platform === 'darwin') return true;
+  if (process.platform !== 'win32') return false;
+  const build = +String(require('os').release()).split('.')[2] || 0;
+  return build >= 22621;
+}
+// Appearance is chosen in the renderer; main keeps the last one so the next launch starts
+// with the right window colour, title-bar button colour and backdrop (no dark flash in light mode).
+const HEX = /^#[0-9a-f]{6}$/i;
+function readAppearance() {
+  const a = settings.appearance || {};
+  return { glass: !!a.glass && glassSupported(), dark: a.dark !== false, bg: HEX.test(a.bg) ? a.bg : '#111214' };
+}
+const symbolColor = (dark) => (dark ? '#c4c5ca' : '#3b3c42');
+function applyAppearance(raw) {
+  if (!raw || typeof raw !== 'object') return;
+  settings.appearance = { glass: !!raw.glass, dark: !!raw.dark, bg: HEX.test(raw.bg) ? raw.bg : '#111214' };
+  saveSettings();
+  if (!win || win.isDestroyed()) return;
+  const a = readAppearance();
+  if (process.platform === 'win32') {
+    win.setBackgroundMaterial(a.glass ? 'acrylic' : 'none');
+    win.setTitleBarOverlay({ color: '#00000000', symbolColor: symbolColor(a.dark), height: 56 });
+  } else if (process.platform === 'darwin') {
+    win.setVibrancy(a.glass ? (a.dark ? 'under-window' : 'sidebar') : null);
+  }
+  win.setBackgroundColor(a.glass ? '#00000000' : a.bg);
+}
+
 function createWindow() {
+  const a = readAppearance();
   win = new BrowserWindow({
     width: 1360,
     height: 860,
     minWidth: 960,
     minHeight: 620,
-    backgroundColor: '#111214',
+    backgroundColor: a.glass ? '#00000000' : a.bg,
+    ...(a.glass && process.platform === 'win32' ? { backgroundMaterial: 'acrylic' } : {}),
+    ...(a.glass && process.platform === 'darwin' ? { vibrancy: a.dark ? 'under-window' : 'sidebar' } : {}),
     titleBarStyle: 'hidden',
     // Windows/Linux draw min/max/close over the top-right; macOS keeps its traffic lights top-left.
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 20, y: 20 } }
       // Transparent so the buttons blend with whatever is behind them (main view or Now Playing art)
-      : { titleBarOverlay: { color: '#00000000', symbolColor: '#c4c5ca', height: 56 } }),
+      : { titleBarOverlay: { color: '#00000000', symbolColor: symbolColor(a.dark), height: 56 } }),
     title: 'GameSong',
     icon: path.join(__dirname, 'build', 'icon.png'),
     webPreferences: {
