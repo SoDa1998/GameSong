@@ -28,12 +28,11 @@ This builds two files in `dist/`:
 - Adds an uninstaller to Windows **Settings → Apps**. Uninstalling keeps your likes and settings.
 - Stores your data in `%APPDATA%\GameSong`, and downloads to `Music\GameSong` by default.
 
-**`GameSong-Portable-<version>.exe`: no install**
-- A single file you can put in any folder, such as on a USB drive.
+**`GameSong-<version>-Portable.rar`: no install**
+- A single RAR file you can put in any folder, such as on a USB drive.
 - Keeps everything next to itself:
-  - `GameSong Data/` holds likes, library, history, settings and lyric choices.
   - `GameSong Downloads/` is the default download folder.
-- Each launch takes a few seconds while the exe unpacks itself.
+- Just extract the archive and open **"GameSong.exe"**.
 
 Neither file is code-signed, so Windows SmartScreen may warn you the first time. Choose **More info → Run anyway**.
 
