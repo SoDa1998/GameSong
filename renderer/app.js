@@ -1663,17 +1663,33 @@ const THEME_COLORS = ['#1b2a3d', '#2a1f3d', '#1d3326', '#3a1f24', '#33291a', '#e
 
 // A full palette from one base colour: surfaces step toward white on dark bases, toward black
 // on light ones. The built-in Dark and Light themes are just two fixed bases run through this.
-function paletteFrom(base) {
+const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+// Smallest step from the background toward the ink colour that reaches `ratio` against `against`.
+function readable(b, ink, from, ratio, against) {
+  for (let t = from; t < 1; t += 0.02) { const c = mixRgb(b, ink, t); if (contrast(c, against) >= ratio) return rgbHex(c); }
+  return rgbHex(ink);
+}
+// glassA: 1 = opaque; lower = more of the (blurred) desktop shows through. Text contrast is then
+// checked against the worst case: the theme colour pulled toward the opposite of the ink colour
+// (a light theme over a dark desktop, or a dark theme over a bright one).
+function paletteFrom(base, { glassA = 1 } = {}) {
   const b = hexRgb(base);
   const dark = luminance(b) < 0.4;
   const ink = dark ? [255, 255, 255] : [0, 0, 0];
+  const anti = dark ? [255, 255, 255].map((v) => v * 0.6) : [0, 0, 0];
   const m = (t) => rgbHex(mixRgb(b, ink, t));
   const lift = (t) => rgbHex(mixRgb(b, [255, 255, 255], t));
+  const glass = glassA < 1;
+  const behind = glass ? mixRgb(b, anti, (1 - glassA) * 0.45) : b;
   return {
     dark,
     bg: base, side: m(dark ? 0.025 : 0.03),
     surface: dark ? m(0.045) : lift(0.6), 'surface-2': m(dark ? 0.075 : 0.07), 'surface-3': m(dark ? 0.11 : 0.11), line: m(dark ? 0.065 : 0.09),
-    text: dark ? '#f1f1f3' : '#17181b', sub: m(dark ? 0.56 : 0.6), muted: m(dark ? 0.36 : 0.42),
+    // Primary text is full-strength over glass; secondary/muted text is held to WCAG-style contrast
+    // (4.5:1 body text, 3.5:1 hints; stronger over glass, where the backdrop varies).
+    text: glass ? (dark ? '#ffffff' : '#0b0b0d') : (dark ? '#f1f1f3' : '#17181b'),
+    sub: readable(b, ink, dark ? 0.56 : 0.6, glass ? 6 : 4.6, behind),
+    muted: readable(b, ink, dark ? 0.36 : 0.42, glass ? 4.8 : 3.5, behind),
     'menu-bg': dark ? m(0.065) : lift(0.75), 'menu-line': m(dark ? 0.1 : 0.1),
     'sk-a': m(dark ? 0.04 : 0.05), 'sk-b': m(dark ? 0.075 : 0.025),
     'slider-buffer': m(dark ? 0.2 : 0.2), 'focus-line': m(dark ? 0.24 : 0.3), 'fmt-line': m(dark ? 0.17 : 0.2),
@@ -1693,9 +1709,10 @@ let glassSupported = null;   // null until main answers; until then trust the sa
 let lastAppearance = '';
 function applyTheme() {
   const p = state.prefs;
-  const pal = paletteFrom(themeBase());
   const root = document.documentElement;
   const glass = !!p.glass && glassSupported !== false;
+  const glassA = 1 - Math.min(90, Math.max(0, p.glassTransparency ?? 40)) / 100;
+  const pal = paletteFrom(themeBase(), { glassA: glass ? glassA : 1 });
   const vars = { ...pal };
   delete vars.dark;
   // Accent: "default" is monochrome (the text colour), otherwise the chosen colour everywhere.
@@ -1713,14 +1730,14 @@ function applyTheme() {
       surface: `rgba(${ink}, .06)`, 'surface-2': `rgba(${ink}, .1)`, 'surface-3': `rgba(${ink}, .14)`, line: `rgba(${ink}, .09)`,
     });
   }
-  vars['glass-a'] = String(1 - Math.min(90, Math.max(0, p.glassTransparency ?? 40)) / 100);
+  vars['glass-a'] = String(glassA);
   for (const [k, v] of Object.entries(vars)) root.style.setProperty('--' + k, v);
   root.style.colorScheme = pal.dark ? 'dark' : 'light';
   root.dataset.theme = pal.dark ? 'dark' : 'light';
   root.classList.toggle('glass', glass);
   // Tell the window: backdrop material, background colour, and title-bar button colour
   // (Now Playing is always dark, so the buttons go light while it's open).
-  const a = { glass, dark: pal.dark || npOpen(), bg: pal.bg };
+  const a = { glass, dark: pal.dark || npOpen(), themeDark: pal.dark, followSystem: (p.theme || 'dark') === 'system', bg: pal.bg };
   const key = JSON.stringify(a);
   if (glassSupported !== null && key !== lastAppearance) { lastAppearance = key; api.setAppearance?.(a); }
 }

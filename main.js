@@ -2,7 +2,7 @@
 // All requests to khinsider go through Chromium's network stack (net.fetch), which
 // Cloudflare accepts where plain Node/curl clients get blocked. If a page still comes
 // back as a Cloudflare challenge we fall back to loading it in a hidden browser window.
-const { app, BrowserWindow, ipcMain, net, dialog, shell, protocol, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, net, dialog, shell, protocol, nativeImage, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -414,26 +414,44 @@ function glassSupported() {
 const HEX = /^#[0-9a-f]{6}$/i;
 function readAppearance() {
   const a = settings.appearance || {};
-  return { glass: !!a.glass && glassSupported(), dark: a.dark !== false, bg: HEX.test(a.bg) ? a.bg : '#111214' };
+  const dark = a.dark !== false;
+  return {
+    glass: !!a.glass && glassSupported(),
+    dark,                                                      // title-bar buttons (light while Now Playing is open)
+    themeDark: typeof a.themeDark === 'boolean' ? a.themeDark : dark,   // the app theme itself
+    followSystem: !!a.followSystem,
+    bg: HEX.test(a.bg) ? a.bg : '#111214',
+  };
 }
 const symbolColor = (dark) => (dark ? '#c4c5ca' : '#3b3c42');
+// The acrylic/vibrancy backdrop is tinted by the window's light/dark mode, which follows
+// nativeTheme. Pin it to the app's theme so a light theme gets a light frosted backdrop (and
+// a dark one a dark backdrop) whatever Windows uses; "System" leaves it following Windows.
+function applyNativeTheme(a) {
+  nativeTheme.themeSource = a.followSystem ? 'system' : (a.themeDark ? 'dark' : 'light');
+}
 function applyAppearance(raw) {
   if (!raw || typeof raw !== 'object') return;
-  settings.appearance = { glass: !!raw.glass, dark: !!raw.dark, bg: HEX.test(raw.bg) ? raw.bg : '#111214' };
+  settings.appearance = {
+    glass: !!raw.glass, dark: !!raw.dark, themeDark: !!raw.themeDark, followSystem: !!raw.followSystem,
+    bg: HEX.test(raw.bg) ? raw.bg : '#111214',
+  };
   saveSettings();
+  applyNativeTheme(readAppearance());
   if (!win || win.isDestroyed()) return;
   const a = readAppearance();
   if (process.platform === 'win32') {
     win.setBackgroundMaterial(a.glass ? 'acrylic' : 'none');
     win.setTitleBarOverlay({ color: '#00000000', symbolColor: symbolColor(a.dark), height: 56 });
   } else if (process.platform === 'darwin') {
-    win.setVibrancy(a.glass ? (a.dark ? 'under-window' : 'sidebar') : null);
+    win.setVibrancy(a.glass ? (a.themeDark ? 'under-window' : 'sidebar') : null);
   }
   win.setBackgroundColor(a.glass ? '#00000000' : a.bg);
 }
 
 function createWindow() {
   const a = readAppearance();
+  applyNativeTheme(a);
   win = new BrowserWindow({
     width: 1360,
     height: 860,
