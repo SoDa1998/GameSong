@@ -15,6 +15,9 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'gscover', privileges: { standar
 // exe lives in. Keep all app data (and downloads, by default) beside it instead of in AppData.
 const PORTABLE_DIR = process.env.PORTABLE_EXECUTABLE_DIR || '';
 if (PORTABLE_DIR) app.setPath('userData', path.join(PORTABLE_DIR, 'GameSong Data'));
+// Dev runs (`npm start`) can use a throwaway profile so testing never touches the data of an
+// installed GameSong, which otherwise shares %APPDATA%\GameSong.
+else if (!app.isPackaged && process.env.GAMESONG_USER_DATA) app.setPath('userData', path.resolve(process.env.GAMESONG_USER_DATA));
 
 const BASE = 'https://downloads.khinsider.com';
 const ALLOWED_MEDIA_HOST = /(^|\.)vgmtreasurechest\.com$/i;

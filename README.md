@@ -13,6 +13,12 @@ npm install
 npm start
 ```
 
+To try changes without touching the data of an installed GameSong (both use `%APPDATA%\GameSong`), point dev runs at a throwaway profile:
+
+```powershell
+$env:GAMESONG_USER_DATA = "$env:TEMP\gamesong-dev"; npm start
+```
+
 ## Build for Windows
 
 ```bash
@@ -50,6 +56,7 @@ Neither file is code-signed, so Windows SmartScreen may warn you the first time.
 - **Support KHInsider** (above Options): opens KHInsider's donation page in your browser. The site runs on donations, and every song in GameSong comes from it.
 - **Now Playing screen**: opens from the player bar's expand button, the cover art, or the `N` key.
   - Large blurred-art backdrop with full-resolution cover art.
+  - A record player: the cover is the sleeve, with a vinyl record (the cover on its label) half out of it. The record spins at 33⅓ rpm while a song plays, and the tonearm swings onto it when you press play and lifts off when you pause.
   - Playback controls centered under the seek bar, with the lyrics button in the like / download row.
   - A scrollable **Playing Queue** with the whole queue: played tracks above, the current one highlighted, upcoming below. Click any row to play it.
   - Full-screen mode (the button, or `F11`). Text and controls scale with the screen.

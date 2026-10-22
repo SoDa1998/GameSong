@@ -912,6 +912,7 @@ function markPlaying() {
 
 function onPlayState() {
   $$('.js-play').forEach((b) => { setIcon(b, audio.paused ? 'play' : 'pause'); b.title = audio.paused ? 'Play' : 'Pause'; });
+  np.classList.toggle('is-playing', !audio.paused);   // record spins, tonearm drops onto it
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
   markPlaying();
 }
@@ -1096,9 +1097,10 @@ let npArtFor = null;
 function setNPArt(t) {
   if (npArtFor === t.albumPath) return;
   npArtFor = t.albumPath;
-  if (!t.cover) { $('#npBigArt').src = PLACEHOLDER; $('#npBg').src = PLACEHOLDER; return; }
+  if (!t.cover) { $('#npBigArt').src = PLACEHOLDER; $('#npBg').src = PLACEHOLDER; $('#npLabel').src = PLACEHOLDER; return; }
   $('#npBigArt').src = art(t.cover, 512);
   $('#npBg').src = art(t.cover, 256);
+  $('#npLabel').src = art(t.cover, 512);   // the record's centre label
   const full = art(t.cover, 1600);
   const img = new Image();
   img.onload = () => { if (npArtFor === t.albumPath) $('#npBigArt').src = full; };

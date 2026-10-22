@@ -613,7 +613,7 @@ div.head-art { cursor: default; }
   position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; overflow: hidden;
   background: #0c0d0f; isolation: isolate;
   animation: npIn .35s var(--ease);
-  --np-art: clamp(240px, min(62vh, 42vw), 1100px);
+  --np-art: clamp(240px, min(62vh, 33vw), 1000px);
 }
 .np.closing { animation: npOut .28s ease-in forwards; }
 @keyframes npIn { from { opacity: 0; transform: translateY(28px) scale(.985); } }
@@ -650,14 +650,63 @@ body.fs .np-top-actions { margin-right: 0; }
 .pill-toggle.on { background: #fff; color: #111; }
 
 .np-body {
-  flex: 1; min-height: 0; display: grid; grid-template-columns: var(--np-art) minmax(320px, clamp(480px, 30vw, 820px));
+  flex: 1; min-height: 0; display: grid; grid-template-columns: calc(var(--np-art) * 1.28) minmax(320px, clamp(480px, 30vw, 820px));
   justify-content: center; align-items: center; column-gap: clamp(32px, 6vw, 120px); padding: 0 clamp(24px, 5vw, 96px) clamp(24px, 6vh, 72px);
 }
-.np-stage { position: relative; width: var(--np-art); height: var(--np-art); }
+/* Record player. Sizes derive from --np-art (the stage height):
+   --S sleeve (album cover), --D record diameter, --L tonearm length.
+   The record's centre sits on the sleeve's right edge, so half of it shows. */
+.np-stage {
+  --S: calc(var(--np-art) * .8); --D: calc(var(--S) * .94); --L: calc(var(--D) * .68);
+  position: relative; width: calc(var(--S) * 1.6); height: var(--np-art);
+}
 .np-art {
-  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: clamp(12px, 1.2vw, 20px);
-  box-shadow: 0 30px 80px rgba(0,0,0,.55); background: var(--surface-2);
+  position: absolute; left: 0; top: calc((var(--np-art) - var(--S)) / 2); z-index: 2;
+  width: var(--S); height: var(--S); object-fit: cover; border-radius: clamp(6px, .6vw, 10px);
+  box-shadow: 0 30px 80px rgba(0,0,0,.55), 8px 0 24px rgba(0,0,0,.35); background: var(--surface-2);
   transition: opacity .6s var(--ease), transform .6s var(--ease), filter .6s var(--ease);
+}
+.np-deck { position: absolute; inset: 0; transition: opacity .6s var(--ease), transform .6s var(--ease), filter .6s var(--ease); }
+.vinyl {
+  position: absolute; z-index: 1; width: var(--D); height: var(--D); border-radius: 50%;
+  left: calc(var(--S) - var(--D) / 2); top: calc((var(--np-art) - var(--D)) / 2);
+  box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.09);   /* faint rim so the edge reads on dark art */
+  animation: vinylOut .9s var(--ease) both .15s;   /* slides out of the sleeve when Now Playing opens */
+}
+@keyframes vinylOut { from { transform: translateX(calc(var(--D) * -.5)) rotate(-60deg); } }
+.vinyl-disc {
+  position: absolute; inset: 0; border-radius: 50%; display: grid; place-items: center;
+  background:
+    radial-gradient(circle, transparent 0 18.5%, rgba(255,255,255,.08) 18.5% 19.2%, transparent 19.2% 30%, rgba(255,255,255,.05) 30% 30.6%, transparent 30.6%),
+    repeating-radial-gradient(circle, #121214 0 1.1px, #1b1b1e 1.1px 2.2px),
+    #111;
+  animation: vinylSpin 1.8s linear infinite;   /* 33⅓ rpm */
+  animation-play-state: paused;
+}
+@keyframes vinylSpin { to { transform: rotate(360deg); } }
+.np.is-playing .vinyl-disc { animation-play-state: running; }
+.vinyl-label { width: 36%; height: 36%; border-radius: 50%; object-fit: cover; grid-area: 1 / 1; box-shadow: 0 0 0 2px rgba(0,0,0,.6); }
+.vinyl-hole { grid-area: 1 / 1; width: 3.2%; height: 3.2%; border-radius: 50%; background: #0c0d0f; box-shadow: inset 0 1px 2px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.15); }
+/* Light catching the grooves: stays still while the disc turns underneath */
+.vinyl-sheen {
+  position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(from 20deg, transparent 0 8%, rgba(255,255,255,.13) 13%, transparent 19% 50%, rgba(255,255,255,.09) 63%, transparent 69%);
+  -webkit-mask: radial-gradient(circle, transparent 0 19%, #000 19.5%); mask: radial-gradient(circle, transparent 0 19%, #000 19.5%);
+}
+/* Tonearm: pivot at (50, 40) in its 100×400 viewBox, i.e. 50% / 10% of the element. Parked just
+   off the record; swings 26° onto the grooves on play, lifts back on pause. */
+.tonearm {
+  position: absolute; z-index: 3; width: calc(var(--L) / 4); height: var(--L); overflow: visible;
+  left: calc(var(--S) + var(--D) * .54 - var(--L) / 8); top: calc(var(--np-art) / 2 - var(--D) * .48 - var(--L) * .1);
+  transform-origin: 50% 10%; transform: rotate(-6deg);
+  filter: drop-shadow(0 10px 12px rgba(0,0,0,.55));
+  transition: transform .7s cubic-bezier(.45, 0, .2, 1);
+}
+.np.is-playing .tonearm { transform: rotate(20deg); transition-delay: .12s; }
+.np.lyrics-on .np-deck { opacity: .12; transform: scale(.94); filter: blur(24px) saturate(1.3); }
+@media (prefers-reduced-motion: reduce) {
+  .vinyl { animation: none; }
+  .np.is-playing .vinyl-disc { animation-play-state: paused; }
 }
 .np-lyrics {
   position: absolute; inset: 0; opacity: 0; pointer-events: none; transform: scale(.98);
